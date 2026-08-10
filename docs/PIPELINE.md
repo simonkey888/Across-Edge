@@ -1,14 +1,15 @@
-# Canonical T0→T3 pipeline
+# Pipeline semantics
 
-Pinned upstream: `across-protocol/relayer@741ca9f7d72923f7b13c1c2462ca90eba81e1a87`.
+`T0` — raw canonical evaluation observation. Stores deposit block, current canonical `maxBlockNumber`, and whether the minimum-confirmation gate is satisfied.
 
-| Stage | Exact canonical anchor | Meaning |
-|---|---|---|
-| T0 | `Relayer.evaluateFill`, immediately before `resolveRepaymentChain()` after structural/age gates | candidate reaches canonical profitability/repayment decision path |
-| T1 | `Relayer.evaluateFill`, after `resolveRepaymentChain()` and canonical balance/overcommit gates | canonical eligibility/profitability decision complete; canonical economics captured when available |
-| T2 | `MultiCallerClient._executeTxnQueue`, after batch/individual canonical simulation selects final transaction requests | final canonical simulation outcome |
-| T3 | same `simulate` branch, `TransactionClient.prepare()` | unsigned transaction populated and serialized, broadcaster-ready but never submitted |
+`TA` — first observation that is live-equivalent actionable at the canonical minimum-confirmation gate. Early no-send simulation may continue internally, but it is labelled `SIMULATION_EARLY_NOT_LIVE_ACTIONABLE`; no T1/T2/T3 trace is attached before TA.
 
-Across-Edge stamps its own `perf_counter_ns()` when each structured upstream event is received so T0–T3 durations use one monotonic clock domain. Upstream also emits `process.hrtime.bigint()` for source-side diagnostics, but cross-process duration math does not mix clocks.
+`T1` — canonical eligibility/profitability result after TA. Canonical fee/gas/net components are propagated where available; missing rebalance cost remains `UNKNOWN`.
 
-Rejected T1 candidates intentionally do not receive T2/T3. The stage machine forbids T1 before T0, T2 before T1, T3 before T2, stage overwrite, and backwards monotonic timestamps.
+`T2` — result of canonical `MultiCallerClient` simulation for a transaction carrying an actionable trace.
+
+`T3` — unsigned populated/serialized transaction-ready state inside simulation mode, before any submit path. It never signs or broadcasts.
+
+`TW` — earliest competitive fill selected by persisted chain order. `FastFill(0)` and `ReplacedSlowFill(1)` compete. `SlowFill(2)` and unknown future fill types do not enter winner/headroom metrics.
+
+Business latency is `TA→T1→T2→T3`, and headroom compares T3 to TW only when both clocks are comparable and the winner is a competitive fill type.

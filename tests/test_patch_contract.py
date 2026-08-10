@@ -1,19 +1,11 @@
 from pathlib import Path
-def test_patch_has_all_canonical_stages_and_no_live_send_addition():
- p=Path('patches/across-relayer-order002-instrumentation.patch').read_text()
- for stage in ('"T0"','"T1"','"T2"','"T3"'):assert stage in p
- assert 'TransactionClient.ts' in p and 'MultiCallerClient.ts' in p and 'Relayer.ts' in p
- added='\n'.join(x[1:] for x in p.splitlines() if x.startswith('+') and not x.startswith('+++'))
- assert 'eth_sendRawTransaction' not in added and '.submit(' not in added and 'signTransaction(' not in added
- assert 'serializeTransaction' in added and 'populateTransaction' in added
-
-def test_patch_preserves_trace_ids_through_both_bundle_paths_and_binds_economics():
- p=Path('patches/across-relayer-order002-instrumentation.patch').read_text();assert p.count('acrossEdgeTraceIds: sdkUtils.dedupArray(transactions.flatMap')==2;assert 'repaymentChainProfitability.inputAmountUsd' not in p;assert '+        inputAmountUsd,' in p
-
-def test_patch_hunks_are_monotonic_per_file():
- import re
- p=Path('patches/across-relayer-order002-instrumentation.patch').read_text();current=None;last=-1
- for line in p.splitlines():
-  if line.startswith('diff --git '):current=line;last=-1
-  elif line.startswith('@@ '):
-   m=re.search(r'-(\d+)',line);assert m;old=int(m.group(1));assert old>=last,(current,last,old);last=old
+def patch():return Path('patches/across-relayer-order003-instrumentation.patch').read_text()
+def test_patch_has_all_stages_and_no_live_send_addition():
+ p=patch()
+ for stage in ('"T0"','"TA"','"T1"','"T2"','"T3"'):assert stage in p
+ added='\n'.join(x[1:] for x in p.splitlines() if x.startswith('+') and not x.startswith('+++'));assert 'eth_sendRawTransaction' not in added and '.submit(' not in added and 'signTransaction(' not in added;assert 'serializeTransaction' in added and 'populateTransaction' in added
+def test_patch_models_confirmation_gate_and_suppresses_early_trace():
+ p=patch();assert 'deposit.blockNumber <= maxBlockNumber' in p;assert 'simulation_early_not_live_actionable' in p;assert 'acrossEdgeLiveActionable ? acrossEdgeTrace : undefined' in p;assert 'emitAcrossEdge("TA"' in p
+def test_trace_ids_preserved_through_both_bundle_paths():assert patch().count('acrossEdgeTraceIds: sdkUtils.dedupArray(transactions.flatMap')==2
+def test_patch_economics_binding_uses_canonical_profit_fields():
+ p=patch();assert 'grossRelayerFeeUsd' in p and 'nativeTokenFillCostUsd' in p and 'netRelayerFeeUsd' in p

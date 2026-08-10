@@ -1,20 +1,19 @@
-# ORDER-002 test-to-requirement matrix
+# ORDER-003 test requirement matrix
 
-| Requirement | Evidence/test |
+| Requirement | Evidence test |
 |---|---|
-| strict T0→T1→T2→T3, no skip/overwrite/backwards | `tests/test_instrumentation.py` |
-| canonical event correlation | `tests/test_coordinator.py` |
-| exact duplicate fill replay idempotence / first winner immutable | `tests/test_observer_replay.py` |
-| deadline-1 / deadline / deadline+1 + address↔bytes32 | `tests/test_classification.py` |
-| exclusive→step-in transition persisted across restart | `tests/test_observer_replay.py` |
-| reorg rewind removes orphan fill and clears winner | `tests/test_storage_reorg.py` |
-| upstream repository + exact SHA fail closed | `tests/test_upstream_pin.py` |
-| keys / non-void signer / send flags / broadcaster / write RPC fail closed | `tests/test_safety.py` |
-| URL/log sanitization | `tests/test_safety.py`, `tests/test_runmeta.py` |
-| sequential fallback honestly named + parallel read race isolated | `tests/test_rpc.py` |
-| canonical USD unit normalization + explicit rebalance UNKNOWN | `tests/test_profitability.py` |
-| official event topic derivation | `tests/test_evm_topics.py` |
-| instrumentation patch contains T0-T3 and adds no signing/send primitive | `tests/test_patch_contract.py` |
-| full committed surface secret scan | `scripts/secret_scan.py` |
-
-The matrix proves local deterministic behavior. It does **not** claim the TypeScript patch compiled or ran inside the pinned upstream checkout; that requires the external upstream runtime evidence gate.
+| Strict T0→TA→T1→T2→T3 | `test_instrumentation.py` |
+| Confirmation insufficient/exact threshold/zero-confirm/restart | `test_coordinator_actionable.py` |
+| Fill before shadow / restart | `test_reconciliation.py` |
+| Two-fill canonical ordering | `test_reconciliation.py` |
+| Duplicate overlap idempotence | `test_reconciliation.py` |
+| Reorg reveals replacement winner | `test_reconciliation.py` |
+| Fast/ReplacedSlow compete; Slow/unknown isolated | `test_fill_types.py` |
+| Receive timestamp precedes parse; indexed direct lookup | `test_coordinator_actionable.py`, `test_direct_lookup_benchmark.py` |
+| Decode gap blocks cursor and recovers | `test_decode_gap.py` |
+| Reorg+replay equivalent to clean ingest | `test_storage_reorg_equivalence.py` |
+| Continuous multi-cycle runtime / restart continuity / child restart | `test_supervisor.py` |
+| Non-void wallet, secrets, write RPCs, execution flags blocked | `test_safety.py` |
+| Upstream identity/SHA fail closed | `test_upstream_pin.py` |
+| Instrumentation patch contains no send/sign additions | `test_patch_contract.py` |
+| Unknowns not converted to zero/profit | `test_reporting.py`, `test_profitability.py` |

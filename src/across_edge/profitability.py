@@ -15,5 +15,4 @@ def normalize_canonical_economics(raw:dict)->dict:
         v=raw.get(name)
         if v in (None,'UNKNOWN'):return None
         return Decimal(str(v))/Decimal(10**18)
-    gross=dec18('gross_relayer_fee_usd_wei');gas=dec18('native_token_fill_cost_usd_wei');net=dec18('net_relayer_fee_usd_wei');capital=dec18('output_amount_usd_wei')
-    return {'gross_relayer_fee_usd':gross,'destination_native_cost_usd':gas,'canonical_net_relayer_fee_usd':net,'capital_required_usd':capital,'repayment_chain_id':raw.get('repayment_chain_id'),'rebalance_cost_usd':None,'rebalance_cost_evidence':'UNKNOWN'}
+    return {'gross_relayer_fee_usd':dec18('gross_relayer_fee_usd_wei'),'destination_native_cost_usd':dec18('native_token_fill_cost_usd_wei'),'canonical_net_relayer_fee_usd':dec18('net_relayer_fee_usd_wei'),'capital_required_usd':dec18('output_amount_usd_wei'),'repayment_chain_id':raw.get('repayment_chain_id'),'rebalance_cost_usd':None,'rebalance_cost_evidence':'UNKNOWN'}

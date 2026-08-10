@@ -1,50 +1,35 @@
-# Across-Edge
+# Across-Edge — ORDER-003
 
-Across-Edge is a zero-spend, read-only research harness for measuring whether a new Across relayer can reach a canonical fill-ready decision before observed competitors without risking capital.
+Zero-spend, read-only measurement harness for the canonical Across relayer. ORDER-003 completes the shadow software while preserving the absolute lock against live financial execution.
 
-**ORDER-002 safety lock:** no funded wallet, no private key/mnemonic, no live relay, no transaction broadcast, no value transfer, no registration/nomination write, no swap/rebalance/CEX execution, no paid service provisioning. The canonical Across relayer runs only with `--wallet void`, `SEND_RELAYS=false` and `SEND_TRANSACTIONS=false`.
+## Invariants
 
-## What changed in ORDER-002
+- exact upstream: `across-protocol/relayer@741ca9f7d72923f7b13c1c2462ca90eba81e1a87`
+- exact instrumentation patch hash is bound in `config/upstream-pin.json`
+- canonical process runs with `--wallet void`, `SEND_RELAYS=false`, nonzero `POLLING_DELAY`, and every auxiliary write path disabled
+- observers use only allow-listed read JSON-RPC methods
+- `T0` is raw observation; `TA` is first live-equivalent actionable observation under canonical minimum-confirmation logic
+- business timing uses `TA`, never early simulation-only `T0`
+- competitive winner types are `FastFill(0)` and `ReplacedSlowFill(1)`; `SlowFill(2)` is retained but excluded
+- first winner is reconstructed from persisted `(blockNumber, logIndex, txHash, eventId)` order, independent of arrival order
+- unresolved decode gaps make competitiveness evidence incomplete and hold the cursor behind the failing block
 
-- exact upstream repository + SHA and instrumentation patch SHA fail closed;
-- physical T0/T1/T2/T3 patch at canonical `Relayer` / `MultiCallerClient` / `TransactionClient` anchors;
-- strict non-overwritable stage state machine;
-- real read-only SpokePool observer with bounded backfill, cursor/restart and reorg rewind;
-- duplicate replay idempotence and immutable first winner;
-- destination-time exclusivity + persisted step-in transitions;
-- full committed-surface secret scan and sanitized errors;
-- canonical economics fields + explicit unknown rebalance cost;
-- honest `fallback_read` vs isolated parallel read-race experiment;
-- deterministic run metadata/reporting and integrated shadow runner.
-
-## Local deterministic checks
+## Continuous command
 
 ```bash
-python -m pip install --no-deps -e . pytest
-python -m pytest
+python scripts/shadow_run.py ./upstream-relayer --duration 86400 --polling-delay 5 --observer-interval 2
+```
+
+The command verifies upstream identity/SHA and patch hash/applied state before starting. It supervises the no-send relayer, continuously polls origin/destination SpokePools, persists cursors, reconciles fills, exports periodic evidence, handles SIGTERM/SIGINT, and applies bounded restart/backoff to read-only components.
+
+## Local gates
+
+```bash
+python -m pytest -q
+python -m compileall -q src scripts
 python scripts/secret_scan.py
+python scripts/benchmark_coordinator.py --records 5000 --samples 1000
 PYTHONPATH=src python -m across_edge.cli safety-check
 ```
 
-## Upstream preparation
-
-```bash
-git clone https://github.com/across-protocol/relayer.git /path/to/relayer
-git -C /path/to/relayer checkout 741ca9f7d72923f7b13c1c2462ca90eba81e1a87
-python scripts/apply_upstream_patch.py /path/to/relayer --check-only
-python scripts/apply_upstream_patch.py /path/to/relayer
-```
-
-The script refuses a different repository identity, different SHA, or modified patch hash.
-
-## Integrated shadow run
-
-After installing the pinned upstream's dependencies at zero cost:
-
-```bash
-python scripts/shadow_run.py /path/to/relayer --run-id order002-real-001
-```
-
-The default prepared route is Arbitrum One → Base with public read-only endpoints, plus a public Ethereum RPC for canonical HubPool state. Current sandbox evidence records a DNS-resolution blocker before the first RPC read; it is not represented as an economic blocker or as real competitiveness data.
-
-Synthetic fixture evidence from ORDER-001 remains historical test evidence only. `READY_BEFORE_WINNER` is never interpreted as `WOULD_HAVE_WON`.
+Synthetic fixture results are never business evidence. `READY_BEFORE_WINNER` remains explicitly weaker than `WOULD_HAVE_WON`.

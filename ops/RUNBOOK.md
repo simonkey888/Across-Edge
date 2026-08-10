@@ -1,50 +1,23 @@
-# ORDER-002 runbook
+# ORDER-003 runbook
 
-## Preconditions
+## Preflight
 
-- Git, Node `>=22.18.0`, Yarn/Corepack and Python `>=3.11`.
-- No real signer secret in environment/files.
-- Network endpoints must be read-only-use approved and zero incremental cost.
+1. Checkout Across-Edge branch `order-001-shadow-relayer` at the approved source HEAD.
+2. Checkout `https://github.com/across-protocol/relayer` at the exact SHA in `config/upstream-pin.json`.
+3. Apply `patches/across-relayer-order003-instrumentation.patch` and verify its SHA-256.
+4. Run the full local gates in README.
 
-## 1. Prepare exact upstream
-
-```bash
-git clone https://github.com/across-protocol/relayer.git ./runtime/across-relayer
-git -C ./runtime/across-relayer checkout 741ca9f7d72923f7b13c1c2462ca90eba81e1a87
-python scripts/apply_upstream_patch.py ./runtime/across-relayer --check-only
-python scripts/apply_upstream_patch.py ./runtime/across-relayer
-```
-
-Install upstream dependencies using its lockfile. Do not configure exchange, KMS, paid RPC, private key or mnemonic.
-
-## 2. Local gates
+## Sustained zero-spend shadow
 
 ```bash
-python -m pytest
-python scripts/secret_scan.py
-PYTHONPATH=src python -m across_edge.cli safety-check
+python scripts/shadow_run.py ./upstream-relayer \
+  --run-id order003-shadow \
+  --duration 86400 \
+  --polling-delay 5 \
+  --observer-interval 2 \
+  --export-interval 60
 ```
 
-## 3. Observer-only bounded smoke
+`POLLING_DELAY` must be positive. Ctrl-C or SIGTERM performs clean shutdown. Periodic artifacts and `health.json` are written under the selected output directory. SQLite WAL/cursors make observer restart safe.
 
-```bash
-PYTHONPATH=src python -m across_edge.cli observe evidence/smoke.sqlite smoke-001 --chains arbitrum,base --backfill 128
-```
-
-Only `eth_blockNumber`, `eth_getLogs` and `eth_getBlockByNumber` are used by this path.
-
-## 4. Integrated canonical shadow run
-
-```bash
-python scripts/shadow_run.py ./runtime/across-relayer --db evidence/order002-shadow.sqlite --run-id order002-real-001 --out evidence/order002-real-001
-```
-
-The launcher verifies upstream identity/SHA and that the pinned patch is applied. It constructs a minimal child environment, forces all send/inventory/rebalance flags false, and invokes `yarn relay --wallet void`. It runs the independent observer separately and correlates canonical T0–T3 records with winner fills.
-
-## 5. Shutdown
-
-SIGTERM the wrapper. It terminates the relayer child, waits briefly, then escalates to kill only if needed. SQLite WAL preserves committed evidence.
-
-## Sustained run
-
-The exact same command can be supervised for 24–72h only on an already-available runtime verified to incur zero incremental charge. ORDER-002 provides no cloud provisioning automation.
+Do not execute this command with any secret-bearing environment, non-void wallet, enabled send flag, paid endpoint, or funded signer.

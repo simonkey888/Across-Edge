@@ -1,0 +1,251 @@
+diff --git a/src/clients/TransactionClient.ts b/src/clients/TransactionClient.ts
+--- a/src/clients/TransactionClient.ts
++++ b/src/clients/TransactionClient.ts
+@@ -80,4 +80,6 @@
+   // If true, the contract's provider will be replaced with the TransactionClient's SpeedProvider for
+   // this chain (if configured), enabling parallel multi-RPC dispatch for faster submission.
+   spray?: boolean;
++  // Across-Edge ORDER-003 read-only instrumentation. Trace IDs never contain credentials.
++  acrossEdgeTraceIds?: string[];
+ }
+@@ -121,5 +121,18 @@
+   simulate(txns: AugmentedTransaction[]): Promise<TransactionSimulationResult[]> {
+     return Promise.all(txns.map((txn: AugmentedTransaction) => this._simulate(txn)));
+   }
+ 
++  /** Populate and serialize an unsigned transaction without signing or submitting it. */
++  async prepare(txn: AugmentedTransaction): Promise<{ serialized: string }> {
++    const { contract, method, args, value = bnZero, gasLimit } = txn;
++    const populated =
++      method === ""
++        ? { to: contract.address, data: args[0] as ethers.utils.BytesLike, value }
++        : await contract.populateTransaction[method](...args, { value });
++    if (isDefined(gasLimit)) populated.gasLimit = gasLimit;
++    const complete = await contract.signer.populateTransaction(populated);
++    const { from: _from, ...unsigned } = complete;
++    return { serialized: ethers.utils.serializeTransaction(unsigned) };
++  }
++
+   async dispatch(
+diff --git a/src/clients/MultiCallerClient.ts b/src/clients/MultiCallerClient.ts
+--- a/src/clients/MultiCallerClient.ts
++++ b/src/clients/MultiCallerClient.ts
+@@ -20,3 +20,10 @@
+ import lodash from "lodash";
+ 
++function emitAcrossEdge(stage: "T2" | "T3", payload: Record<string, unknown>): void {
++  if (process.env.ACROSS_EDGE_INSTRUMENTATION !== "true") return;
++  process.stdout.write(
++    `ACROSS_EDGE_EVENT ${JSON.stringify({ version: 3, stage, source_monotonic_ns: process.hrtime.bigint().toString(), wall_utc: new Date().toISOString(), ...payload })}\n`
++  );
++}
++
+ // @todo: MultiCallerClient should be generic.
+@@ -220,5 +227,23 @@
+       txnRequestsToSubmit.push(..._valueTxns.concat(await this.buildMultiCallBundles(_txns, this.chunkSize[chainId])));
+     }
+ 
++    const allTraceIds = sdkUtils.dedupArray(batchTxns.flatMap((txn) => txn.acrossEdgeTraceIds ?? []));
++    const successfulTraceIds = new Set(txnRequestsToSubmit.flatMap((txn) => txn.acrossEdgeTraceIds ?? []));
++    allTraceIds.forEach((trace_id) =>
++      emitAcrossEdge("T2", { trace_id, simulation_result: successfulTraceIds.has(trace_id) ? "success" : "failed" })
++    );
++
+     if (simulate) {
++      for (const txn of txnRequestsToSubmit) {
++        try {
++          const prepared = await this.txnClient.prepare(txn);
++          (txn.acrossEdgeTraceIds ?? []).forEach((trace_id) =>
++            emitAcrossEdge("T3", { trace_id, transaction_ready: true, transaction_serialized: prepared.serialized })
++          );
++        } catch {
++          (txn.acrossEdgeTraceIds ?? []).forEach((trace_id) =>
++            emitAcrossEdge("T3", { trace_id, transaction_ready: false, rejection_reason: "prepare_failed" })
++          );
++        }
++      }
+       let mrkdwn = "";
+@@ -320,3 +345,4 @@
+       message: "Across multicall transaction",
+       mrkdwn: mrkdwn.join(""),
++      acrossEdgeTraceIds: sdkUtils.dedupArray(transactions.flatMap((txn) => txn.acrossEdgeTraceIds ?? [])),
+     } as AugmentedTransaction;
+@@ -365,3 +391,4 @@
+       message: "Across multicall transaction",
+       mrkdwn: mrkdwn.join(""),
++      acrossEdgeTraceIds: sdkUtils.dedupArray(transactions.flatMap((txn) => txn.acrossEdgeTraceIds ?? [])),
+     } as AugmentedTransaction;
+
+diff --git a/src/relayer/Relayer.ts b/src/relayer/Relayer.ts
+--- a/src/relayer/Relayer.ts
++++ b/src/relayer/Relayer.ts
+@@ -50,10 +50,25 @@
+ type RepaymentChainProfitability = {
+   gasLimit: BigNumber;
+   gasCost: BigNumber;
+   gasPrice: BigNumber;
+   relayerFeePct: BigNumber;
+   totalUserFeePct: BigNumber;
+   lpFeePct: BigNumber;
++  inputAmountUsd?: BigNumber;
++  outputAmountUsd?: BigNumber;
++  grossRelayerFeeUsd?: BigNumber;
++  nativeTokenFillCostUsd?: BigNumber;
++  netRelayerFeeUsd?: BigNumber;
+ };
+ 
++function acrossEdgeTraceId(deposit: Deposit): string {
++  return `${deposit.originChainId}:${deposit.depositId.toString()}:${deposit.destinationChainId}`;
++}
++function emitAcrossEdge(stage: "T0" | "TA" | "T1", payload: Record<string, unknown>): void {
++  if (process.env.ACROSS_EDGE_INSTRUMENTATION !== "true") return;
++  process.stdout.write(
++    `ACROSS_EDGE_EVENT ${JSON.stringify({ version: 3, stage, source_monotonic_ns: process.hrtime.bigint().toString(), wall_utc: new Date().toISOString(), ...payload })}\n`
++  );
++}
++
+ export class Relayer {
+@@ -805,6 +820,26 @@
+     const { profitClient, spokePoolClients, tokenClient } = this.clients;
+     const { slowDepositors } = this.config;
+     const [originChain, destChain] = [getNetworkName(originChainId), getNetworkName(destinationChainId)];
++    const acrossEdgeTrace = acrossEdgeTraceId(deposit);
++    const acrossEdgeLiveActionable = deposit.blockNumber <= maxBlockNumber;
++    emitAcrossEdge("T0", {
++      trace_id: acrossEdgeTrace,
++      deposit_key: `${originChainId}:${depositId.toString()}`,
++      origin_chain_id: originChainId,
++      destination_chain_id: destinationChainId,
++      deposit_id: depositId.toString(),
++      input_token: deposit.inputToken.toNative(),
++      output_token: deposit.outputToken.toNative(),
++      input_amount: deposit.inputAmount.toString(),
++      output_amount: deposit.outputAmount.toString(),
++      exclusive_relayer: deposit.exclusiveRelayer.toBytes32(),
++      exclusivity_deadline: deposit.exclusivityDeadline,
++      decision_destination_time: spokePoolClients[destinationChainId].getCurrentTime(),
++      deposit_block: deposit.blockNumber,
++      max_block_number: maxBlockNumber,
++      live_equivalent_confirmations_satisfied: acrossEdgeLiveActionable,
++      simulation_early_not_live_actionable: !acrossEdgeLiveActionable,
++    });
+ 
+     if (isDefined(this.pendingTxnHashes[destinationChainId])) {
+@@ -831,6 +866,14 @@
+         return;
+       }
+     }
++
++    if (acrossEdgeLiveActionable) {
++      emitAcrossEdge("TA", {
++        trace_id: acrossEdgeTrace,
++        max_block_number: maxBlockNumber,
++        live_equivalent_confirmations_satisfied: true,
++        simulation_early_not_live_actionable: false,
++        first_actionable_destination_time: spokePoolClients[destinationChainId].getCurrentTime(),
++      });
++    }
+ 
+     // If depositor is on the slow deposit list, then send a zero fill to initiate a slow relay and return early.
+@@ -862,6 +905,11 @@
+         lpFeePct: realizedLpFeePct,
+         totalUserFeePct,
+         gasPrice,
++        inputAmountUsd,
++        outputAmountUsd,
++        grossRelayerFeeUsd,
++        nativeTokenFillCostUsd,
++        netRelayerFeeUsd,
+       },
+     } = await this.resolveRepaymentChain(deposit, lpFees);
+ 
+@@ -880,2 +928,5 @@
+     if (!isProfitable) {
++      if (acrossEdgeLiveActionable) {
++        emitAcrossEdge("T1", { trace_id: acrossEdgeTrace, eligible: false, profitability_decision: "unprofitable", rejection_reason: "no_profitable_repayment_chain" });
++      }
+       profitClient.captureUnprofitableFill(deposit, realizedLpFeePct, relayerFeePct, gasCost);
+@@ -895,2 +946,5 @@
+     if (!hasBalance) {
++      if (acrossEdgeLiveActionable) {
++        emitAcrossEdge("T1", { trace_id: acrossEdgeTrace, eligible: false, profitability_decision: "profitable", rejection_reason: "insufficient_balance" });
++      }
+       // The relayer has insufficient balance for a profitable fill; log it for rebalancing and request a slow fill.
+@@ -915,2 +969,5 @@
+     if (this.originChainOvercommitted(originChainId, fillAmountUsd, limitIdx)) {
++      if (acrossEdgeLiveActionable) {
++        emitAcrossEdge("T1", { trace_id: acrossEdgeTrace, eligible: false, profitability_decision: "profitable", rejection_reason: "origin_chain_overcommitment" });
++      }
+       const limits = this.fillLimits[originChainId].slice(limitIdx);
+@@ -930,3 +987,21 @@
+     const gasLimit = isMessageEmpty(resolveDepositMessage(deposit)) ? undefined : _gasLimit;
++    if (acrossEdgeLiveActionable) {
++      emitAcrossEdge("T1", {
++        trace_id: acrossEdgeTrace,
++        eligible: true,
++        profitability_decision: "profitable",
++        economics: {
++          repayment_chain_id: repaymentChainId,
++          lp_fee_pct_wei: realizedLpFeePct.toString(),
++          input_amount_usd_wei: inputAmountUsd?.toString() ?? "UNKNOWN",
++          output_amount_usd_wei: outputAmountUsd?.toString() ?? "UNKNOWN",
++          gross_relayer_fee_usd_wei: grossRelayerFeeUsd?.toString() ?? "UNKNOWN",
++          native_token_fill_cost_usd_wei: nativeTokenFillCostUsd?.toString() ?? "UNKNOWN",
++          net_relayer_fee_usd_wei: netRelayerFeeUsd?.toString() ?? "UNKNOWN",
++        },
++      });
++    }
+-    this.fillRelay(deposit, repaymentChainId, realizedLpFeePct, totalUserFeePct, gasPrice, gasLimit);
++    this.fillRelay(deposit, repaymentChainId, realizedLpFeePct, totalUserFeePct, gasPrice, gasLimit, acrossEdgeLiveActionable ? acrossEdgeTrace : undefined);
+   }
+@@ -1220,4 +1295,5 @@
+     totalUserFeePct: BigNumber,
+     gasPrice: BigNumber,
+-    gasLimit?: BigNumber
++    gasLimit?: BigNumber,
++    acrossEdgeTrace?: string
+   ): void {
+@@ -1275,2 +1351,5 @@
+-      multiCallerClient.enqueueTransaction({ contract, chainId, method, args, gasLimit, message, mrkdwn });
++      multiCallerClient.enqueueTransaction({
++        contract, chainId, method, args, gasLimit, message, mrkdwn,
++        acrossEdgeTraceIds: acrossEdgeTrace ? [acrossEdgeTrace] : undefined,
++      });
+     } else {
+@@ -1430,12 +1509,22 @@
+         gasPrice,
+         netRelayerFeePct: relayerFeePct,
+         totalFeePct: totalUserFeePct,
++        inputAmountUsd,
++        outputAmountUsd,
++        grossRelayerFeeUsd,
++        nativeTokenFillCostUsd,
++        netRelayerFeeUsd,
+       } = await profitClient.isFillProfitable(deposit, lpFeePct, preferredChainId);
+       return {
+         profitable,
+         gasLimit,
+         gasCost,
+         gasPrice,
+         relayerFeePct,
+         totalUserFeePct,
++        inputAmountUsd,
++        outputAmountUsd,
++        grossRelayerFeeUsd,
++        nativeTokenFillCostUsd,
++        netRelayerFeeUsd,
+       };
+@@ -1475,8 +1564,13 @@
+       return {
+         gasLimit,
+         gasCost,
+         gasPrice,
+         relayerFeePct,
+         totalUserFeePct,
+         lpFeePct,
++        inputAmountUsd: repaymentChainProfitabilities[preferredChainIndex].inputAmountUsd,
++        outputAmountUsd: repaymentChainProfitabilities[preferredChainIndex].outputAmountUsd,
++        grossRelayerFeeUsd: repaymentChainProfitabilities[preferredChainIndex].grossRelayerFeeUsd,
++        nativeTokenFillCostUsd: repaymentChainProfitabilities[preferredChainIndex].nativeTokenFillCostUsd,
++        netRelayerFeeUsd: repaymentChainProfitabilities[preferredChainIndex].netRelayerFeeUsd,
+       };

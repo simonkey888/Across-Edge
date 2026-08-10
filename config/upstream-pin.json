@@ -3,8 +3,8 @@
   "sha": "741ca9f7d72923f7b13c1c2462ca90eba81e1a87",
   "license": "AGPL-3.0-only",
   "node": ">=22.18.0",
-  "instrumentation_patch": "patches/across-relayer-order002-instrumentation.patch",
-  "instrumentation_patch_sha256": "451197444b552360ce524c826f3e4c21fb568c3bf9a1a2e1224bcfe358ad02ed",
+  "instrumentation_patch": "patches/across-relayer-order003-instrumentation.patch",
+  "instrumentation_patch_sha256": "ef2257a5b0b9af65f07129af277d063c36742cda9297ed0cd300ff29cfa6b974",
   "safe_cli": ["yarn", "relay", "--wallet", "void"],
   "send_relays": false,
   "send_transactions": false

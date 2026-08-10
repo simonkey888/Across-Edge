@@ -1,19 +1,12 @@
-# Architecture — ORDER-002
+# Architecture — ORDER-003
 
-Across-Edge remains a wrapper around the exact canonical Across relayer pin. It does not reimplement relay correctness.
+Across-Edge wraps rather than replaces canonical Across logic.
 
-```text
-canonical Across relayer @ 741ca9f7...
-  Relayer.evaluateFill            -> T0 candidate enters canonical profitability path
-  resolveRepaymentChain           -> T1 canonical decision/economics
-  MultiCaller canonical simulate  -> T2 final simulation result
-  TransactionClient.prepare       -> T3 unsigned populated/serialized transaction
-  simulate=true                   -> RETURN BEFORE TransactionClient.submit
-                 | stdout structured events only
-                 v
-Across-Edge coordinator -> SQLite v2 records -> independent RPC observer -> TW/first winner -> reports
-```
+1. The pinned relayer emits version-3 instrumentation events from canonical `Relayer`, `MultiCallerClient`, and `TransactionClient` paths.
+2. `ShadowCoordinator` captures a Python `perf_counter_ns()` receive mark before JSON parsing, performs an indexed `(run_id, trace_id)` lookup, and persists stages.
+3. `RpcObserver` independently reads SpokePool deposits/fills, persists chain-order events and cursors, and records unresolved decode gaps.
+4. `Observer.reconcile_deposit()` deterministically recomputes the winner from persisted chain order, so fill-before-shadow and overlap/replay are equivalent.
+5. `ContinuousSupervisor` keeps the no-send relayer and read-only observers operating until shutdown, with bounded retry/restart and health/readiness state.
+6. `reporting.py` exports deterministic evidence. Business metrics start at `TA`.
 
-The patch adds no signing or submission primitive. T3 calls only read-side population/serialization and runs inside the existing `simulate` branch before the canonical submit call. `SEND_RELAYS=false`, `SEND_TRANSACTIONS=false`, `--wallet void`, inventory/rebalance and registration-like execution flags are forced false.
-
-Independent observation uses chain SpokePool logs, not relayer logs. Current target smoke route is Arbitrum One ↔ Base because both chains expose public no-auth RPCs and current Across SpokePool addresses are available from official sources.
+Clock boundary: Node `process.hrtime()` is stored only as source diagnostics. Cross-component durations use the Across-Edge process monotonic clock captured on receipt, including `TW` from observer threads in the same runtime.
