@@ -21,7 +21,7 @@ def test_dotenv_boundary_rejects_secret_bearing_checkout(tmp_path):
     (tmp_path/'.env').unlink();(tmp_path/'.env.example').write_text('API_TOKEN=example\n');assert audit_upstream_dotenv(tmp_path)['status']=='PASS'
 
 def test_dotenv_boundary_blocks_child_launch_before_process(monkeypatch,tmp_path):
-    (tmp_path/'.env').write_text('API_TOKEN=sentinel-secret-value\n')
+    (tmp_path/'.git').mkdir();(tmp_path/'.env').write_text('API_TOKEN=sentinel-secret-value\n')
     monkeypatch.setattr('across_edge.upstream._git',lambda *_args:'741ca9f7d72923f7b13c1c2462ca90eba81e1a87' if _args[-1]=='HEAD' else 'across-protocol/relayer')
     launched=[]
     def fake_run(*args,**kwargs):launched.append((args,kwargs));return subprocess.CompletedProcess(args,0,'','')
