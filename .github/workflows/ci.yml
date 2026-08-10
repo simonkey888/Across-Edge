@@ -1,4 +1,4 @@
-name: order-001-ci
+name: order-002-ci
 # Manual only: private-repository Actions cost is not assumed zero.
 on:
   workflow_dispatch:
@@ -16,3 +16,4 @@ jobs:
       - run: python -m pytest
       - run: python scripts/secret_scan.py
       - run: PYTHONPATH=src python -m across_edge.cli safety-check
+      - run: git apply --numstat patches/across-relayer-order002-instrumentation.patch

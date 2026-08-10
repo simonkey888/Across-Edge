@@ -1,7 +1,7 @@
 # Economics and evidence classes
 
-Canonical Across profitability remains authoritative; Across-Edge stores/normalizes its outputs rather than replacing it.
+Canonical Across `ProfitClient` is the source of truth for fill economics. The ORDER-002 instrumentation propagates, when available, 18-decimal USD fields: input/output amount USD, gross relayer fee USD, native-token fill cost USD, net relayer fee USD, LP fee percentage and selected repayment chain.
 
-Evidence labels: `OBSERVED` for measurements, `DERIVED_CALCULATION` for arithmetic from observations, `ASSUMPTION` for hypothetical fixed-cost/capital scenarios, and `UNKNOWN` for unavailable values. Unknown is never silently converted to zero.
+Across-Edge normalizes those values without replacing the canonical profitability decision. Rebalance cost is `UNKNOWN` unless it can be observed without financial execution. Capital required is represented by the canonical output-amount USD value for the candidate; future lock duration/rebalance path remain unknown until measurable.
 
-When all inputs exist: `net_before_infra = gross_relayer_fee - destination_gas - protocol/LP_fee - rebalance_cost`. Break-even scenarios support $5/$10/$20 monthly fixed infrastructure without purchasing anything.
+Every economic field must be tagged as one of `OBSERVED_THIS_RUN`, `PRIMARY_SOURCE`, `DERIVED_CALCULATION`, `ASSUMPTION`, `HISTORICAL_PRIOR_RESEARCH`, or `UNKNOWN`. Missing components never become zero. Break-even scenarios are generated for $0/$5/$10/$20 monthly fixed infrastructure only when positive observed/derived net-per-fill exists.

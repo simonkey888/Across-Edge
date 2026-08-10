@@ -1,5 +1,9 @@
-# Safety envelope
+# Safety — ORDER-002
 
-ORDER-001 is zero-spend and zero-capital-at-risk. Code rejects real secret variables, requires `--wallet void`, rejects true send flags, allow-lists read-only RPC methods, and exposes only a broadcaster stub that raises `LIVE_EXECUTION_PROHIBITED_BY_ORDER_001`.
+Hard invariant: zero spend, zero value transfer, zero live financial execution.
 
-No registration/nomination write, exchange credential, swap/rebalance, paid RPC/compute, transaction broadcast, gas spend, token purchase, funded wallet, or value transfer is authorized. `tests/test_safety.py` proves key/send/wallet/RPC-write failures. `scripts/secret_scan.py` performs a dependency-free repository scan.
+Runtime rejects secret signer material, any wallet other than `void`, any enabled relay/transaction/slow-relay/inventory/rebalancer/executor/registration/nomination flag, and every RPC method outside a read-only allowlist. `ProhibitedBroadcaster` always throws. The integrated runtime builds a minimal child environment rather than blindly forwarding the parent environment.
+
+Logs/errors are sanitized: URL userinfo/query/fragment are removed and bearer/key-like values are redacted. The committed-surface secret scanner scans source, docs and evidence; it skips only binary suffixes and one exact negative-test fixture.
+
+The upstream patch reaches T3 only from the existing canonical simulation branch and returns before `TransactionClient.submit`. The patch contract test rejects additions containing `eth_sendRawTransaction`, `.submit(` or `signTransaction(`.

@@ -1,5 +1,12 @@
-# RPC latency / hedged-read experiment
+# RPC latency / read racing
 
-Upstream already has RetryProvider and `SpeedProvider`; live spray is prohibited. Across-Edge supplies a read-only JSON-RPC adapter and conservative fallback hedging. A real benchmark must record chain/runtime region, `eth_blockNumber`, `eth_getLogs`, relevant `eth_call`/`eth_estimateGas`, success/stale-head/timeout rates and p50/p90/p99.
+The prior function called “hedged” was sequential. ORDER-002 renames that behavior `fallback_read`.
 
-`RPC_HEDGING_VERDICT=BLOCKED_BY_ZERO_COST_RUNTIME`: no endpoint was provisioned or assumed free. True parallel hedging must be justified by measured benefit. Write-side racing is prohibited.
+A separate `parallel_read_race` issues the same **allow-listed read** concurrently and takes the first successful response; it is experimental and is not promoted into baseline until real measurements justify it. No write method can cross `JsonRpcClient`.
+
+Verified public endpoints prepared for the target route:
+- Arbitrum One: `https://arb1.arbitrum.io/rpc` (official Arbitrum docs; public, no SLA).
+- Base: `https://mainnet.base.org` (official Base docs; free/rate-limited, not production-grade).
+- Ethereum hub dependency: `https://ethereum-rpc.publicnode.com` (PublicNode's own public/free service page; optional runtime dependency for canonical hub state).
+
+The current execution sandbox failed DNS resolution before the first `eth_blockNumber`; therefore real latency p50/p90/p99 is `EXPLICITLY_BLOCKED_BY_EXECUTION_SANDBOX_NETWORK`, not “blocked by cost.”

@@ -1,0 +1,8 @@
+{
+  "evidence_date": "2026-08-10",
+  "routes": [
+    {"chain_id":42161,"name":"Arbitrum One","rpc":"https://arb1.arbitrum.io/rpc","spoke_pool":"0xe35e9842fceaCA96570B734083f4a58e8F7C5f2A","rpc_source":"https://docs.arbitrum.io/for-devs/dev-tools-and-resources/chain-info","contract_source":"https://github.com/across-protocol/contracts/blob/c959c80e6fbcce9a4b8e4b1321c70b0872297fa5/broadcast/deployed-addresses.md"},
+    {"chain_id":8453,"name":"Base","rpc":"https://mainnet.base.org","spoke_pool":"0x09aea4b2242abC8bb4BB78D537A67a245A7bEC64","rpc_source":"https://docs.base.org/base-chain/quickstart/connecting-to-base","contract_source":"https://github.com/across-protocol/contracts/blob/c959c80e6fbcce9a4b8e4b1321c70b0872297fa5/broadcast/deployed-addresses.md"},
+    {"chain_id":1,"name":"Ethereum","rpc":"https://ethereum-rpc.publicnode.com","spoke_pool":"0x5c7BCd6E7De5423a257D81B442095A1a6ced35C5","rpc_source":"https://ethereum-rpc.publicnode.com/","contract_source":"https://github.com/across-protocol/contracts/blob/c959c80e6fbcce9a4b8e4b1321c70b0872297fa5/broadcast/deployed-addresses.md"}
+  ]
+}

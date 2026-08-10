@@ -1,13 +1,50 @@
-# ORDER-001 runbook
+# ORDER-002 runbook
 
-Prerequisites: Python 3.11+. Pinned upstream needs Node >=22.18.0. Redis is optional upstream for caching/state coordination; Across-Edge evidence uses SQLite.
+## Preconditions
 
-1. `python -m pytest`
-2. `python scripts/secret_scan.py`
-3. `PYTHONPATH=src python -m across_edge.cli safety-check`
-4. Clone upstream separately and checkout exactly `741ca9f7d72923f7b13c1c2462ca90eba81e1a87`.
-5. Supply only RPC/runtime already verified to have zero incremental charge; never commit key-bearing URLs.
-6. Launch only with `SEND_RELAYS=false SEND_TRANSACTIONS=false yarn relay --wallet void --address 0x0000000000000000000000000000000000000000`.
-7. Keep DB under `runs/`; export with `across-edge report <db> <run_id> artifacts/<run_id>`.
+- Git, Node `>=22.18.0`, Yarn/Corepack and Python `>=3.11`.
+- No real signer secret in environment/files.
+- Network endpoints must be read-only-use approved and zero incremental cost.
 
-If free status cannot be proven, stop with `BLOCKED_BY_ZERO_COST_RUNTIME`.
+## 1. Prepare exact upstream
+
+```bash
+git clone https://github.com/across-protocol/relayer.git ./runtime/across-relayer
+git -C ./runtime/across-relayer checkout 741ca9f7d72923f7b13c1c2462ca90eba81e1a87
+python scripts/apply_upstream_patch.py ./runtime/across-relayer --check-only
+python scripts/apply_upstream_patch.py ./runtime/across-relayer
+```
+
+Install upstream dependencies using its lockfile. Do not configure exchange, KMS, paid RPC, private key or mnemonic.
+
+## 2. Local gates
+
+```bash
+python -m pytest
+python scripts/secret_scan.py
+PYTHONPATH=src python -m across_edge.cli safety-check
+```
+
+## 3. Observer-only bounded smoke
+
+```bash
+PYTHONPATH=src python -m across_edge.cli observe evidence/smoke.sqlite smoke-001 --chains arbitrum,base --backfill 128
+```
+
+Only `eth_blockNumber`, `eth_getLogs` and `eth_getBlockByNumber` are used by this path.
+
+## 4. Integrated canonical shadow run
+
+```bash
+python scripts/shadow_run.py ./runtime/across-relayer --db evidence/order002-shadow.sqlite --run-id order002-real-001 --out evidence/order002-real-001
+```
+
+The launcher verifies upstream identity/SHA and that the pinned patch is applied. It constructs a minimal child environment, forces all send/inventory/rebalance flags false, and invokes `yarn relay --wallet void`. It runs the independent observer separately and correlates canonical T0–T3 records with winner fills.
+
+## 5. Shutdown
+
+SIGTERM the wrapper. It terminates the relayer child, waits briefly, then escalates to kill only if needed. SQLite WAL preserves committed evidence.
+
+## Sustained run
+
+The exact same command can be supervised for 24–72h only on an already-available runtime verified to incur zero incremental charge. ORDER-002 provides no cloud provisioning automation.

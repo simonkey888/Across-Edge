@@ -1,7 +1,7 @@
 # Arbitrum sequencer-feed experiment
 
-Reference pin: `nuntax/sequencer_client@96f5d856ec917e71f778cf726704d1049430d05f`, MIT per Amendment 001-A. Advertised reconnect/reordering/dedup/batch features remain upstream claims until reproduced; fixed batching/lead figures are not accepted as evidence.
+Official Arbitrum chain information publishes `wss://arb1-feed.arbitrum.io/feed`. The regular sequencer feed is transaction data, not executed EVM logs. It may identify an Arbitrum-origin Across call candidate before an RPC log, but every candidate must later reconcile to execution/receipt/event state.
 
-Invariant: **feed = transactions, not executed logs**. Arbitrum-origin use can at most emit a pre-execution candidate from destination/calldata and must later reconcile against execution. Arbitrum-destination use may aid early winner observation.
+Reference client pin: `nuntax/sequencer_client@96f5d856ec917e71f778cf726704d1049430d05f`; its license is MIT. Author claims about traffic batching or fixed latency advantage are not accepted as measurements.
 
-`SEQUENCER_FEED_VERDICT=BLOCKED_BY_ZERO_COST_RUNTIME`. No Rust sidecar was promoted into the baseline.
+This environment cannot resolve external network hosts, so no WebSocket sample can be measured here. Verdict for this checkpoint: `EXPLICITLY_BLOCKED_BY_EXECUTION_SANDBOX_NETWORK`. No feed result is promoted into baseline.
