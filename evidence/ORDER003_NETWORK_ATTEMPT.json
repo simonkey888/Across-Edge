@@ -1,0 +1,11 @@
+{
+  "attempts": {
+    "arbitrum_feed_host": {"dns": "BLOCKED", "error": "[Errno -3] Temporary failure in name resolution", "error_class": "gaierror", "host": "arb1-feed.arbitrum.io"},
+    "arbitrum_rpc": {"dns": "BLOCKED", "error": "[Errno -3] Temporary failure in name resolution", "error_class": "gaierror", "host": "arb1.arbitrum.io"},
+    "base_rpc": {"dns": "BLOCKED", "error": "[Errno -3] Temporary failure in name resolution", "error_class": "gaierror", "host": "mainnet.base.org"},
+    "github_upstream_host": {"dns": "BLOCKED", "error": "[Errno -3] Temporary failure in name resolution", "error_class": "gaierror", "host": "github.com"}
+  },
+  "classification": "BLOCKED_EXECUTION_ENVIRONMENT_DNS",
+  "source_head": "c9c446d20a786b4066ffa1f473259d484cbab696",
+  "utc": "2026-08-10T07:22:04.944946Z"
+}

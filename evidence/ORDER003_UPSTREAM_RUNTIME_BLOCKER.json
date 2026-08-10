@@ -1,0 +1,9 @@
+{
+  "command": "timeout 10 git ls-remote https://github.com/across-protocol/relayer.git 741ca9f7d72923f7b13c1c2462ca90eba81e1a87",
+  "exit_code": 128,
+  "source_head": "c9c446d20a786b4066ffa1f473259d484cbab696",
+  "status": "BLOCKED",
+  "stderr": "fatal: unable to access 'https://github.com/across-protocol/relayer.git/': Could not resolve host: github.com",
+  "upstream_current_head_verified_via_github_connector": "741ca9f7d72923f7b13c1c2462ca90eba81e1a87",
+  "utc": "2026-08-10T07:24:17.722620Z"
+}
