@@ -20,7 +20,7 @@ class ShadowCoordinator:
         upstream_trace=str(e['trace_id']);previous=self.store.db.execute('SELECT COUNT(*) AS n FROM evaluation_attempts WHERE run_id=? AND upstream_trace_id=?',(self.run_id,upstream_trace)).fetchone()['n'];attempt_id=upstream_trace if previous==0 else f"{upstream_trace}:attempt:{received_ns}"
         version_id,fp,provenance,fields=deposit_version_identity(e,attempt_id);key=str(e['deposit_key']);self.store.create_version(self.run_id,key,version_id,fp,provenance,fields)
         r=ShadowRecord(3,self.run_id,key,int(e['origin_chain_id']),int(e['deposit_id']),int(e['destination_chain_id']),str(e.get('input_token','')),str(e.get('output_token','')),int(e.get('input_amount',0)),int(e.get('output_amount',0)),str(e.get('exclusive_relayer','')),int(e.get('exclusivity_deadline',0)),str(e.get('candidate_type','other')),trace_id=attempt_id,evaluation_attempt_id=attempt_id,upstream_trace_id=upstream_trace,deposit_version_id=version_id,deposit_version_fingerprint=fp,deposit_version_provenance=provenance,deposit_block=int(e.get('deposit_block',0)) if e.get('deposit_block') is not None else None)
-        self.store.create_attempt(self.run_id,attempt_id,upstream_trace,key,version_id,received_ns,e);self.store.link_deposit(self.run_id,key,True);return r
+        self.store.create_attempt(self.run_id,attempt_id,upstream_trace,key,version_id,received_ns,e);self.store.link_deposit(self.run_id,key,True,version_id=version_id,payload=e);return r
     def ingest_line(self,line:str,*,at_ns:int|None=None)->ShadowRecord|None:
         received_ns=perf_counter_ns() if at_ns is None else at_ns;e=self.parse_line(line)
         if e is None:return None
