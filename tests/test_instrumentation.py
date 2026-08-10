@@ -2,7 +2,7 @@ import pytest
 from across_edge.instrumentation import CandidateInstrumentation
 from across_edge.model import ShadowRecord
 from across_edge.storage import Store
-def rec():return ShadowRecord(3,'r','1:1',1,1,42161,'i','o',1,1,'',0,'open',trace_id='t')
+def rec():return ShadowRecord(4,'r','1:1',1,1,42161,'i','o',1,1,'',0,'open',trace_id='t')
 def test_strict_sequence_includes_actionable_gate(tmp_path):
  s=Store(tmp_path/'i.db');i=CandidateInstrumentation(s);r=rec()
  for n,stage in enumerate(('T0','TA','T1','T2','T3'),1):i.mark(r,stage,at_ns=n*10)
