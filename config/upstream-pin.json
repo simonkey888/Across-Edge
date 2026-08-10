@@ -4,7 +4,7 @@
   "license": "AGPL-3.0-only",
   "node": ">=22.18.0",
   "instrumentation_patch": "patches/across-relayer-order002-instrumentation.patch",
-  "instrumentation_patch_sha256": "2f6633b67582fbe30d0a6d74573e2278657bdf27e9f57e9633eafbb861f30f45",
+  "instrumentation_patch_sha256": "451197444b552360ce524c826f3e4c21fb568c3bf9a1a2e1224bcfe358ad02ed",
   "safe_cli": ["yarn", "relay", "--wallet", "void"],
   "send_relays": false,
   "send_transactions": false

@@ -70,6 +70,12 @@ diff --git a/src/clients/MultiCallerClient.ts b/src/clients/MultiCallerClient.ts
        mrkdwn: mrkdwn.join(""),
 +      acrossEdgeTraceIds: sdkUtils.dedupArray(transactions.flatMap((txn) => txn.acrossEdgeTraceIds ?? [])),
      } as AugmentedTransaction;
+@@ -365,3 +366,4 @@
+       message: "Across multicall transaction",
+       mrkdwn: mrkdwn.join(""),
++      acrossEdgeTraceIds: sdkUtils.dedupArray(transactions.flatMap((txn) => txn.acrossEdgeTraceIds ?? [])),
+     } as AugmentedTransaction;
+
 diff --git a/src/relayer/Relayer.ts b/src/relayer/Relayer.ts
 --- a/src/relayer/Relayer.ts
 +++ b/src/relayer/Relayer.ts
@@ -121,6 +127,18 @@ diff --git a/src/relayer/Relayer.ts b/src/relayer/Relayer.ts
 +
      const {
        repaymentChainId,
+@@ -862,6 +878,11 @@
+         lpFeePct: realizedLpFeePct,
+         totalUserFeePct,
+         gasPrice,
++        inputAmountUsd,
++        outputAmountUsd,
++        grossRelayerFeeUsd,
++        nativeTokenFillCostUsd,
++        netRelayerFeeUsd,
+       },
+     } = await this.resolveRepaymentChain(deposit, lpFees);
+
 @@ -880,2 +880,3 @@
      if (!isProfitable) {
 +      emitAcrossEdge("T1", { trace_id: acrossEdgeTrace, eligible: false, profitability_decision: "unprofitable", rejection_reason: "no_profitable_repayment_chain" });
@@ -142,11 +160,11 @@ diff --git a/src/relayer/Relayer.ts b/src/relayer/Relayer.ts
 +      economics: {
 +        repayment_chain_id: repaymentChainId,
 +        lp_fee_pct_wei: realizedLpFeePct.toString(),
-+        input_amount_usd_wei: repaymentChainProfitability.inputAmountUsd?.toString() ?? "UNKNOWN",
-+        output_amount_usd_wei: repaymentChainProfitability.outputAmountUsd?.toString() ?? "UNKNOWN",
-+        gross_relayer_fee_usd_wei: repaymentChainProfitability.grossRelayerFeeUsd?.toString() ?? "UNKNOWN",
-+        native_token_fill_cost_usd_wei: repaymentChainProfitability.nativeTokenFillCostUsd?.toString() ?? "UNKNOWN",
-+        net_relayer_fee_usd_wei: repaymentChainProfitability.netRelayerFeeUsd?.toString() ?? "UNKNOWN",
++        input_amount_usd_wei: inputAmountUsd?.toString() ?? "UNKNOWN",
++        output_amount_usd_wei: outputAmountUsd?.toString() ?? "UNKNOWN",
++        gross_relayer_fee_usd_wei: grossRelayerFeeUsd?.toString() ?? "UNKNOWN",
++        native_token_fill_cost_usd_wei: nativeTokenFillCostUsd?.toString() ?? "UNKNOWN",
++        net_relayer_fee_usd_wei: netRelayerFeeUsd?.toString() ?? "UNKNOWN",
 +      },
 +    });
 -    this.fillRelay(deposit, repaymentChainId, realizedLpFeePct, totalUserFeePct, gasPrice, gasLimit);

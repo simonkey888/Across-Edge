@@ -6,7 +6,7 @@
 - Node engine at the pin: `>=22.18.0`
 - safe CLI: `yarn relay --wallet void`
 - patch: `patches/across-relayer-order002-instrumentation.patch`
-- patch SHA-256: `2f6633b67582fbe30d0a6d74573e2278657bdf27e9f57e9633eafbb861f30f45`
+- patch SHA-256: `451197444b552360ce524c826f3e4c21fb568c3bf9a1a2e1224bcfe358ad02ed`
 
 `verify_upstream_checkout()` fails closed unless both the origin identity and exact HEAD match. `apply_upstream_patch.py` validates the patch hash and uses `git apply --check`; a silently repinned checkout is rejected.
 
