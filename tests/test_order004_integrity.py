@@ -61,3 +61,6 @@ def test_report_is_run_pure_with_same_deposit_id(tmp_path):
 
 def test_partial_economics_are_exposed_not_coerced_to_zero(tmp_path):
     s=Store(tmp_path/'x');o=Observer(s);d=make_deposit();r=o.ingest_deposit(d,'r',destination_time=100,trace_id='t');r.ta_monotonic_ns=1;r.economics={'gross_relayer_fee_usd_wei':'2000000000000000000','native_token_fill_cost_usd_wei':'500000000000000000','net_relayer_fee_usd_wei':'1500000000000000000','output_amount_usd_wei':'100000000000000000000'};s.upsert_shadow(r);rep=build_report(s,'r');assert rep['economics']['gross_relayer_fee_usd']['p50']=='2';assert rep['economics']['canonical_net_relayer_fee_usd']['p50']=='1.5';assert rep['economics']['rebalance_cost_usd']['evidence_class']=='UNKNOWN_REBALANCE_DEPENDENT';assert rep['economics']['final_post_rebalance_net_usd']['p50'] is None;s.close()
+
+def test_economics_percentiles_require_two_samples_for_tail_values(tmp_path):
+    s=Store(tmp_path/'x');o=Observer(s);d=make_deposit();r=o.ingest_deposit(d,'r',destination_time=100,trace_id='t');r.economics={'gross_relayer_fee_usd_wei':'2000000000000000000'};s.upsert_shadow(r);rep=build_report(s,'r');e=rep['economics']['gross_relayer_fee_usd'];assert e['count']==1 and e['p50']=='2' and e['p10'] is None and e['p90'] is None and e['sample_status']=='SAMPLE_INSUFFICIENT';s.close()
