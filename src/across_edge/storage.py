@@ -44,8 +44,7 @@ CREATE TABLE IF NOT EXISTS decode_gaps(run_id TEXT NOT NULL,chain_id INTEGER NOT
     def transaction(self):
         try:self.db.execute('BEGIN IMMEDIATE');yield;self.db.commit()
         except Exception:self.db.rollback();raise
-    def upsert_deposit(self,e:DepositEvent,*,commit=True):
-        self.db.execute('INSERT OR IGNORE INTO deposits VALUES(?,?,?,?,?,?,?)',(e.key,e.origin_chain_id,e.destination_chain_id,str(e.deposit_id),json.dumps(e.__dict__,sort_keys=True),e.block_number,e.tx_hash));self.db.commit() if commit else None
+    def upsert_deposit(self,e:DepositEvent,*,commit=True):self.db.execute('INSERT OR IGNORE INTO deposits VALUES(?,?,?,?,?,?,?)',(e.key,e.origin_chain_id,e.destination_chain_id,str(e.deposit_id),json.dumps(e.__dict__,sort_keys=True),e.block_number,e.tx_hash));self.db.commit() if commit else None
     def link_deposit(self,run_id,key,active=True,*,version_id=None,payload=None):
         self.db.execute('INSERT INTO run_deposits VALUES(?,?,?) ON CONFLICT(run_id,deposit_key) DO UPDATE SET active=excluded.active',(run_id,key,int(active)))
         if active and payload is not None and version_id is not None:self.db.execute('INSERT OR IGNORE INTO run_deposit_snapshots VALUES(?,?,?,?,?)',(run_id,key,version_id,json.dumps(payload,sort_keys=True),_utc()))
@@ -62,7 +61,7 @@ CREATE TABLE IF NOT EXISTS decode_gaps(run_id TEXT NOT NULL,chain_id INTEGER NOT
         return cur.rowcount==1
     def link_fill(self,run_id,event_id,active=True,*,payload=None):
         self.db.execute('INSERT INTO run_fills VALUES(?,?,?) ON CONFLICT(run_id,event_id) DO UPDATE SET active=excluded.active',(run_id,event_id,int(active)))
-        if active and payload is not None:self.db.execute('INSERT OR IGNORE INTO run_fill_observations VALUES(?,?,?,?)',(run_id,event_id,json.dumps(payload,sort_keys=True),_utc()))
+        if active and payload is not None:self.db.execute('INSERT OR REPLACE INTO run_fill_observations VALUES(?,?,?,?)',(run_id,event_id,json.dumps(payload,sort_keys=True),_utc()))
         self.db.commit()
     def fills_for_deposit(self,key:str,run_id:str|None=None)->list[dict]:
         if run_id is None:q='SELECT payload_json FROM fills_v2 WHERE deposit_key=? ORDER BY block_number,log_index,tx_hash,event_id';args=(key,)
