@@ -38,8 +38,8 @@ class Observer:
             if d:
                 r=ShadowRecord(**row);self._transition(r,d,destination_time,source_chain_id=destination_chain_id,source_block_number=source_block_number,source_block_hash=source_block_hash);self.store.upsert_shadow(r)
     def ingest_fill(self,f:FillEvent,run_id:str,*,observed_monotonic_ns=None,observed_wall_utc=None)->bool:
-        now=perf_counter_ns() if observed_monotonic_ns is None else observed_monotonic_ns;wall=utc_now() if observed_wall_utc is None else observed_wall_utc;observed=f.with_observation(now,wall);inserted=self.store.insert_fill(observed);self.store.link_fill(run_id,f.event_id,True)
-        if inserted:self.reconcile_deposit(run_id,f.key)
+        now=perf_counter_ns() if observed_monotonic_ns is None else observed_monotonic_ns;wall=utc_now() if observed_wall_utc is None else observed_wall_utc;observed=f.with_observation(now,wall);inserted=self.store.insert_fill(observed);self.store.link_fill(run_id,f.event_id,True,payload=observed.__dict__)
+        if inserted or self.store.fills_for_deposit(f.key,run_id):self.reconcile_deposit(run_id,f.key)
         return inserted
     def reconcile_deposit(self,run_id,key):
         rows=self.store.shadow_for_deposit(run_id,key)
