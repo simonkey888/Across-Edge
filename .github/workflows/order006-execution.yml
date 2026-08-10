@@ -1,9 +1,6 @@
 name: order-006-execution
 
 on:
-  push:
-    branches:
-      - order-001-shadow-relayer
   workflow_dispatch:
 
 permissions:
@@ -110,7 +107,7 @@ jobs:
               rec={'target':name,'url':url}
               try:
                   req=urllib.request.Request(url,data=json.dumps({'jsonrpc':'2.0','id':1,'method':'eth_chainId','params':[]}).encode(),headers={'Content-Type':'application/json'})
-                  t=time.monotonic();
+                  t=time.monotonic()
                   with urllib.request.urlopen(req,timeout=15,context=ssl.create_default_context()) as r:
                       body=r.read().decode(errors='replace')
                       rec.update(http_status=r.status,latency_ms=round((time.monotonic()-t)*1000,3),result=json.loads(body).get('result'))
