@@ -40,9 +40,9 @@ class ShadowCoordinator:
         if 'economics' in e:updates['economics']=e['economics'];updates['evidence_classes']={k:'OBSERVED_THIS_RUN' for k in e['economics']}
         wall=e.get('wall_utc')
         if not self.store.record_attempt_stage(self.run_id,r.evaluation_attempt_id,e['stage'],received_ns,wall or '',e):return r
-        result=self.inst.mark(r,e['stage'],at_ns=received_ns,wall_utc=wall,**updates)
-        if e['stage']=='TA':self.store.set_aggregate(self.run_id,r.deposit_key,first_actionable_attempt_id=r.evaluation_attempt_id)
+        result=self.inst.mark(r,e['stage'],at_ns=received_ns,wall_utc=wall,**updates);agg=self.store.aggregate(self.run_id,r.deposit_key)
+        if e['stage']=='TA' and not (agg and agg.get('first_actionable_attempt_id')):self.store.set_aggregate(self.run_id,r.deposit_key,first_actionable_attempt_id=r.evaluation_attempt_id)
         if e['stage']=='T1':self.store.set_aggregate(self.run_id,r.deposit_key,current_decision_attempt_id=r.evaluation_attempt_id)
-        if e['stage']=='T3' and result.transaction_ready is True:self.store.set_aggregate(self.run_id,r.deposit_key,first_ready_attempt_id=r.evaluation_attempt_id)
+        if e['stage']=='T3' and result.transaction_ready is True and not (agg and agg.get('first_ready_attempt_id')):self.store.set_aggregate(self.run_id,r.deposit_key,first_ready_attempt_id=r.evaluation_attempt_id)
         if e['stage'] in {'T0','T3'}:self.observer.reconcile_deposit(self.run_id,result.deposit_key)
         return result
