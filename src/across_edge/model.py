@@ -23,6 +23,7 @@ class FillEvent:
     origin_chain_id:int; destination_chain_id:int; deposit_id:int; relayer:str; repayment_chain_id:int
     block_number:int; tx_hash:str; block_timestamp:int; fill_type:int=0; block_hash:str=''; log_index:int=-1
     observed_monotonic_ns:int|None=None; observed_wall_utc:str|None=None
+    deposit_version_id:str|None=None
     @property
     def key(self)->str:return f'{self.origin_chain_id}:{self.deposit_id}'
     @property
@@ -31,15 +32,15 @@ class FillEvent:
     def fill_type_name(self)->str:return FILL_TYPE_NAMES.get(self.fill_type,f'UNKNOWN_{self.fill_type}')
     @property
     def competitive(self)->bool:return self.fill_type in COMPETITIVE_FILL_TYPES
-    def with_observation(self,monotonic_ns:int,wall_utc:str)->'FillEvent':
-        return replace(self,observed_monotonic_ns=monotonic_ns,observed_wall_utc=wall_utc)
+    def with_observation(self,monotonic_ns:int,wall_utc:str)->'FillEvent':return replace(self,observed_monotonic_ns=monotonic_ns,observed_wall_utc=wall_utc)
 
 @dataclass
 class ShadowRecord:
     schema_version:int; run_id:str; deposit_key:str; origin_chain_id:int; deposit_id:int; destination_chain_id:int
     input_token:str; output_token:str; input_amount:int; output_amount:int; exclusive_relayer:str
     exclusivity_deadline:int; candidate_type:CandidateType
-    trace_id:str=''
+    trace_id:str=''; evaluation_attempt_id:str=''; upstream_trace_id:str=''
+    deposit_version_id:str=''; deposit_version_fingerprint:str=''; deposit_version_provenance:str='UNKNOWN'
     t0_monotonic_ns:int|None=None; ta_monotonic_ns:int|None=None; t1_monotonic_ns:int|None=None; t2_monotonic_ns:int|None=None; t3_monotonic_ns:int|None=None
     t0_wall_utc:str|None=None; ta_wall_utc:str|None=None; t1_wall_utc:str|None=None; t2_wall_utc:str|None=None; t3_wall_utc:str|None=None
     deposit_block:int|None=None; max_block_number:int|None=None; live_equivalent_confirmations_satisfied:bool|None=None
@@ -50,7 +51,7 @@ class ShadowRecord:
     transaction_serialized:str=''; economics:dict[str,Any]=field(default_factory=dict); evidence_classes:dict[str,str]=field(default_factory=dict)
     source_stage_monotonic_ns:dict[str,str]=field(default_factory=dict)
     winner_relayer:str=''; winner_tx_hash:str=''; winner_block:int|None=None; winner_log_index:int|None=None; winner_fill_type:int|None=None
-    tw_wall_utc:str|None=None; tw_monotonic_ns:int|None=None; winner_latency_ms:float|None=None; shadow_headroom_ms:float|None=None
+    winner_deposit_version_id:str|None=None; tw_wall_utc:str|None=None; tw_monotonic_ns:int|None=None; winner_latency_ms:float|None=None; shadow_headroom_ms:float|None=None
     candidate_state_history:list[dict[str,Any]]=field(default_factory=list)
     def as_dict(self)->dict[str,Any]:return asdict(self)
     @property
