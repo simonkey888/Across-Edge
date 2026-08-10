@@ -18,11 +18,12 @@ def fill_type_counts(fills:list[dict])->dict[str,int]:
 class Observer:
     def __init__(self,store:Store,relayer_address:str|None=None):self.store=store;self.relayer_address=relayer_address
     def ingest_deposit(self,d:DepositEvent,run_id:str,*,destination_time:int|None=None,trace_id:str|None=None,source_block_number:int|None=None,source_block_hash:str|None=None)->ShadowRecord:
-        self.store.upsert_deposit(d);self.store.link_deposit(run_id,d.key,True);trace_id=trace_id or f'{d.key}:observer';existing=self.store.shadow_by_trace(run_id,trace_id)
-        if existing:r=ShadowRecord(**existing)
+        self.store.upsert_deposit(d);trace_id=trace_id or f'{d.key}:observer';existing=self.store.shadow_by_trace(run_id,trace_id)
+        if existing:r=ShadowRecord(**existing);version_id=r.deposit_version_id
         else:
             version_id,fp,prov,fields=deposit_version_identity({'origin_chain_id':d.origin_chain_id,'destination_chain_id':d.destination_chain_id,'deposit_id':d.deposit_id,'input_token':d.input_token,'output_token':d.output_token,'input_amount':d.input_amount,'output_amount':d.output_amount,'recipient':d.recipient,'exclusive_relayer':d.exclusive_relayer,'exclusivity_deadline':d.exclusivity_deadline,'fill_deadline':d.fill_deadline},trace_id);self.store.create_version(run_id,d.key,version_id,fp,prov,fields)
             initial='other' if destination_time is None else classify_candidate(d,self.relayer_address,destination_time);r=ShadowRecord(3,run_id,d.key,d.origin_chain_id,d.deposit_id,d.destination_chain_id,d.input_token,d.output_token,d.input_amount,d.output_amount,d.exclusive_relayer,d.exclusivity_deadline,initial,trace_id=trace_id,deposit_version_id=version_id,deposit_version_fingerprint=fp,deposit_version_provenance=prov,decision_destination_time=destination_time,deposit_block=d.block_number)
+        self.store.link_deposit(run_id,d.key,True,version_id=version_id,payload=d.__dict__)
         if destination_time is not None:self._transition(r,d,destination_time,source_chain_id=d.destination_chain_id,source_block_number=source_block_number,source_block_hash=source_block_hash)
         self.store.upsert_shadow(r);self.reconcile_deposit(run_id,d.key);return ShadowRecord(**(self.store.shadow_by_trace(run_id,trace_id) or r.as_dict()))
     def _transition(self,r,d,destination_time,*,source_chain_id=None,source_block_number=None,source_block_hash=None):
@@ -31,7 +32,7 @@ class Observer:
         r.candidate_type=state;r.decision_destination_time=destination_time
         if self.store.add_transition(r.run_id,r.trace_id,state,destination_time,source_chain_id=source_chain_id,source_block_number=source_block_number,source_block_hash=source_block_hash):r.candidate_state_history=self.store.transitions(r.run_id,r.trace_id)
     def refresh_candidate_states(self,run_id,destination_chain_id,destination_time,*,source_block_number=None,source_block_hash=None):
-        deps={f"{d['origin_chain_id']}:{d['deposit_id']}":DepositEvent(**d) for d in self.store.all_deposits(run_id) if d['destination_chain_id']==destination_chain_id}
+        deps={f"{d['origin_chain_id']}:{d['deposit_id']":DepositEvent(**d) for d in self.store.all_deposits(run_id) if d['destination_chain_id']==destination_chain_id}
         for row in self.store.shadow_rows(run_id):
             d=deps.get(row['deposit_key'])
             if d:
@@ -43,7 +44,7 @@ class Observer:
     def reconcile_deposit(self,run_id,key):
         rows=self.store.shadow_for_deposit(run_id,key)
         if not rows:return
-        fills=self.store.fills_for_deposit(key,run_id);winner=next((f for f in fills if competitive_fill(f)),None);dep=self.store.deposit(key)
+        fills=self.store.fills_for_deposit(key,run_id);winner=next((f for f in fills if competitive_fill(f)),None);dep=self.store.deposit_for_run(run_id,key)
         for data in rows:
             for k,v in {'winner_relayer':'','winner_tx_hash':'','winner_block':None,'winner_log_index':None,'winner_fill_type':None,'winner_deposit_version_id':None,'tw_wall_utc':None,'tw_monotonic_ns':None,'winner_latency_ms':None,'shadow_headroom_ms':None}.items():data[k]=v
             if winner:
