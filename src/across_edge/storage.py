@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS run_deposits(run_id TEXT NOT NULL,deposit_key TEXT NO
 CREATE TABLE IF NOT EXISTS run_deposit_snapshots(run_id TEXT NOT NULL,deposit_key TEXT NOT NULL,version_id TEXT NOT NULL,payload_json TEXT NOT NULL,observed_utc TEXT NOT NULL,PRIMARY KEY(run_id,deposit_key,version_id));
 CREATE INDEX IF NOT EXISTS run_deposit_snapshots_lookup ON run_deposit_snapshots(run_id,deposit_key,observed_utc);
 CREATE TABLE IF NOT EXISTS run_fills(run_id TEXT NOT NULL,event_id TEXT NOT NULL,active INTEGER NOT NULL DEFAULT 1,PRIMARY KEY(run_id,event_id));
+CREATE TABLE IF NOT EXISTS run_fill_observations(run_id TEXT NOT NULL,event_id TEXT NOT NULL,payload_json TEXT NOT NULL,observed_utc TEXT NOT NULL,PRIMARY KEY(run_id,event_id));
 CREATE TABLE IF NOT EXISTS evaluation_attempts(run_id TEXT NOT NULL,evaluation_attempt_id TEXT NOT NULL,upstream_trace_id TEXT NOT NULL,deposit_key TEXT NOT NULL,deposit_version_id TEXT NOT NULL,created_monotonic_ns INTEGER NOT NULL,created_wall_utc TEXT NOT NULL,immutable_payload_json TEXT NOT NULL,PRIMARY KEY(run_id,evaluation_attempt_id));
 CREATE INDEX IF NOT EXISTS evaluation_attempts_trace ON evaluation_attempts(run_id,upstream_trace_id,created_monotonic_ns);
 CREATE TABLE IF NOT EXISTS active_attempts(run_id TEXT NOT NULL,upstream_trace_id TEXT NOT NULL,evaluation_attempt_id TEXT NOT NULL,PRIMARY KEY(run_id,upstream_trace_id));
@@ -47,24 +48,25 @@ CREATE TABLE IF NOT EXISTS decode_gaps(run_id TEXT NOT NULL,chain_id INTEGER NOT
         self.db.execute('INSERT OR IGNORE INTO deposits VALUES(?,?,?,?,?,?,?)',(e.key,e.origin_chain_id,e.destination_chain_id,str(e.deposit_id),json.dumps(e.__dict__,sort_keys=True),e.block_number,e.tx_hash));self.db.commit() if commit else None
     def link_deposit(self,run_id,key,active=True,*,version_id=None,payload=None):
         self.db.execute('INSERT INTO run_deposits VALUES(?,?,?) ON CONFLICT(run_id,deposit_key) DO UPDATE SET active=excluded.active',(run_id,key,int(active)))
-        if active and payload is not None and version_id is not None:
-            self.db.execute('INSERT OR IGNORE INTO run_deposit_snapshots VALUES(?,?,?,?,?)',(run_id,key,version_id,json.dumps(payload,sort_keys=True),_utc()))
+        if active and payload is not None and version_id is not None:self.db.execute('INSERT OR IGNORE INTO run_deposit_snapshots VALUES(?,?,?,?,?)',(run_id,key,version_id,json.dumps(payload,sort_keys=True),_utc()))
         self.db.commit()
     def deposit(self,key:str)->dict|None:
         r=self.db.execute('SELECT payload_json FROM deposits WHERE deposit_key=?',(key,)).fetchone();return json.loads(r[0]) if r else None
     def deposit_for_run(self,run_id:str,key:str)->dict|None:
-        r=self.db.execute('SELECT payload_json FROM run_deposit_snapshots WHERE run_id=? AND deposit_key=? ORDER BY observed_utc DESC,version_id DESC LIMIT 1',(run_id,key)).fetchone()
-        if r:return json.loads(r[0])
-        return self.deposit(key)
+        r=self.db.execute('SELECT payload_json FROM run_deposit_snapshots WHERE run_id=? AND deposit_key=? ORDER BY observed_utc DESC,version_id DESC LIMIT 1',(run_id,key)).fetchone();return json.loads(r[0]) if r else self.deposit(key)
     def insert_fill(self,e:FillEvent,*,commit=True)->bool:
-        cur=self.db.execute('INSERT OR IGNORE INTO fills_v2 VALUES(?,?,?,?,?,?,?,?)',(e.event_id,e.tx_hash,e.log_index,e.key,e.destination_chain_id,json.dumps(e.__dict__,sort_keys=True),e.block_number,e.block_hash))
-        if cur.rowcount:self.db.execute('INSERT OR IGNORE INTO fills VALUES(?,?,?,?)',(e.tx_hash,e.key,json.dumps(e.__dict__,sort_keys=True),e.block_number))
+        canonical=dict(e.__dict__);canonical['observed_monotonic_ns']=None;canonical['observed_wall_utc']=None;canonical['deposit_version_id']=None
+        cur=self.db.execute('INSERT OR IGNORE INTO fills_v2 VALUES(?,?,?,?,?,?,?,?)',(e.event_id,e.tx_hash,e.log_index,e.key,e.destination_chain_id,json.dumps(canonical,sort_keys=True),e.block_number,e.block_hash))
+        if cur.rowcount:self.db.execute('INSERT OR IGNORE INTO fills VALUES(?,?,?,?)',(e.tx_hash,e.key,json.dumps(canonical,sort_keys=True),e.block_number))
         if commit:self.db.commit()
         return cur.rowcount==1
-    def link_fill(self,run_id,event_id,active=True):self.db.execute('INSERT INTO run_fills VALUES(?,?,?) ON CONFLICT(run_id,event_id) DO UPDATE SET active=excluded.active',(run_id,event_id,int(active)));self.db.commit()
+    def link_fill(self,run_id,event_id,active=True,*,payload=None):
+        self.db.execute('INSERT INTO run_fills VALUES(?,?,?) ON CONFLICT(run_id,event_id) DO UPDATE SET active=excluded.active',(run_id,event_id,int(active)))
+        if active and payload is not None:self.db.execute('INSERT OR IGNORE INTO run_fill_observations VALUES(?,?,?,?)',(run_id,event_id,json.dumps(payload,sort_keys=True),_utc()))
+        self.db.commit()
     def fills_for_deposit(self,key:str,run_id:str|None=None)->list[dict]:
         if run_id is None:q='SELECT payload_json FROM fills_v2 WHERE deposit_key=? ORDER BY block_number,log_index,tx_hash,event_id';args=(key,)
-        else:q='SELECT f.payload_json FROM fills_v2 f JOIN run_fills rf ON rf.event_id=f.event_id AND rf.run_id=? AND rf.active=1 WHERE f.deposit_key=? ORDER BY f.block_number,f.log_index,f.tx_hash,f.event_id';args=(run_id,key)
+        else:q='SELECT o.payload_json FROM run_fill_observations o JOIN run_fills rf ON rf.event_id=o.event_id AND rf.run_id=? AND rf.active=1 JOIN fills_v2 f ON f.event_id=o.event_id WHERE f.deposit_key=? ORDER BY f.block_number,f.log_index,f.tx_hash,f.event_id';args=(run_id,key)
         return [json.loads(r[0]) for r in self.db.execute(q,args).fetchall()]
     def upsert_shadow(self,r:ShadowRecord,*,commit=True):
         if r.trace_id:self.db.execute('INSERT OR REPLACE INTO shadow_records_v2 VALUES(?,?,?,?,?)',(r.run_id,r.trace_id,r.deposit_key,r.schema_version,json.dumps(r.as_dict(),sort_keys=True)))
@@ -82,7 +84,8 @@ CREATE TABLE IF NOT EXISTS decode_gaps(run_id TEXT NOT NULL,chain_id INTEGER NOT
         else:rows=self.db.execute('SELECT s.payload_json FROM run_deposit_snapshots s JOIN run_deposits r ON r.deposit_key=s.deposit_key AND r.run_id=s.run_id WHERE s.run_id=? AND r.active=1 ORDER BY s.observed_utc,s.deposit_key,s.version_id',(run_id,)).fetchall()
         return [json.loads(r[0]) for r in rows]
     def all_fills(self,run_id:str|None=None)->list[dict]:
-        rows=self.db.execute('SELECT payload_json FROM fills_v2 ORDER BY block_number,log_index,tx_hash,event_id').fetchall() if run_id is None else self.db.execute('SELECT f.payload_json FROM fills_v2 f JOIN run_fills r ON r.event_id=f.event_id WHERE r.run_id=? AND r.active=1 ORDER BY f.block_number,f.log_index,f.tx_hash,f.event_id',(run_id,)).fetchall()
+        if run_id is None:rows=self.db.execute('SELECT payload_json FROM fills_v2 ORDER BY block_number,log_index,tx_hash,event_id').fetchall()
+        else:rows=self.db.execute('SELECT o.payload_json FROM run_fill_observations o JOIN run_fills r ON r.event_id=o.event_id AND r.run_id=? AND r.active=1 JOIN fills_v2 f ON f.event_id=o.event_id ORDER BY f.block_number,f.log_index,f.tx_hash,f.event_id',(run_id,)).fetchall()
         if not rows and run_id is None:rows=self.db.execute('SELECT payload_json FROM fills ORDER BY block_number,tx_hash').fetchall()
         return [json.loads(r[0]) for r in rows]
     def add_transition(self,run_id:str,trace_id:str,state:str,destination_time:int,*,source_chain_id:int|None=None,source_block_number:int|None=None,source_block_hash:str|None=None,commit=True)->bool:
@@ -128,10 +131,9 @@ CREATE TABLE IF NOT EXISTS decode_gaps(run_id TEXT NOT NULL,chain_id INTEGER NOT
                 if doomed:
                     qs=','.join('?'*len(doomed));self.db.execute(f'DELETE FROM candidate_transitions WHERE trace_id IN (SELECT trace_id FROM shadow_records_v2 WHERE deposit_key IN ({qs}))',tuple(doomed));self.db.execute(f'DELETE FROM shadow_records_v2 WHERE deposit_key IN ({qs})',tuple(doomed))
                 self.db.execute('DELETE FROM cursors WHERE chain_id=?',(chain_id,));return
-            self.db.execute('UPDATE run_deposits SET active=0 WHERE run_id=? AND deposit_key IN (SELECT deposit_key FROM run_deposit_snapshots WHERE run_id=? AND json_extract(payload_json,\'$.origin_chain_id\')=? AND json_extract(payload_json,\'$.block_number\')>=?)',(run_id,run_id,chain_id,from_block))
             doomed=[r['deposit_key'] for r in self.db.execute('SELECT deposit_key FROM run_deposit_snapshots WHERE run_id=? AND json_extract(payload_json,\'$.origin_chain_id\')=? AND json_extract(payload_json,\'$.block_number\')>=?',(run_id,chain_id,from_block)).fetchall()]
             for key in sorted(set(doomed)):self._clear_run_deposit(run_id,key)
-            self.db.execute('UPDATE run_fills SET active=0 WHERE run_id=? AND event_id IN (SELECT event_id FROM fills_v2 WHERE destination_chain_id=? AND block_number>=?)',(run_id,chain_id,from_block));self.db.execute('DELETE FROM candidate_transitions WHERE run_id=? AND source_chain_id=? AND source_block_number>=?',(run_id,chain_id,from_block));self.db.execute('DELETE FROM decode_gaps WHERE run_id=? AND chain_id=? AND block_number>=?',(run_id,chain_id,from_block));self.db.execute('DELETE FROM run_cursors WHERE run_id=? AND chain_id=?',(run_id,chain_id))
+            self.db.execute('UPDATE run_deposits SET active=0 WHERE run_id=? AND deposit_key IN (SELECT deposit_key FROM run_deposit_snapshots WHERE run_id=? AND json_extract(payload_json,\'$.origin_chain_id\')=? AND json_extract(payload_json,\'$.block_number\')>=?)',(run_id,run_id,chain_id,from_block));self.db.execute('UPDATE run_fills SET active=0 WHERE run_id=? AND event_id IN (SELECT event_id FROM fills_v2 WHERE destination_chain_id=? AND block_number>=?)',(run_id,chain_id,from_block));self.db.execute('DELETE FROM candidate_transitions WHERE run_id=? AND source_chain_id=? AND source_block_number>=?',(run_id,chain_id,from_block));self.db.execute('DELETE FROM decode_gaps WHERE run_id=? AND chain_id=? AND block_number>=?',(run_id,chain_id,from_block));self.db.execute('DELETE FROM run_cursors WHERE run_id=? AND chain_id=?',(run_id,chain_id))
             for row in self.db.execute('SELECT trace_id,payload_json FROM shadow_records_v2 WHERE run_id=?',(run_id,)).fetchall():
                 d=json.loads(row['payload_json']);fills=self.fills_for_deposit(d['deposit_key'],run_id);winner=next((f for f in fills if int(f.get('fill_type',-1)) in {0,1}),None)
                 if d.get('destination_chain_id')==chain_id:
