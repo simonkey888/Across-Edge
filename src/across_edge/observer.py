@@ -45,8 +45,9 @@ class Observer:
     def reconcile_deposit(self,run_id,key):
         rows=self.store.shadow_for_deposit(run_id,key)
         if not rows:return
-        fills=self.store.fills_for_deposit(key,run_id);winner=next((f for f in fills if competitive_fill(f)),None);dep=self.store.deposit_for_run(run_id,key)
+        fills=self.store.fills_for_deposit(key,run_id);dep=self.store.deposit_for_run(run_id,key)
         for data in rows:
+            winner=next((f for f in fills if competitive_fill(f) and (f.get('deposit_version_id') in (None,'',data.get('deposit_version_id')))),None)
             for k,v in {'winner_relayer':'','winner_tx_hash':'','winner_block':None,'winner_log_index':None,'winner_fill_type':None,'winner_deposit_version_id':None,'tw_wall_utc':None,'tw_monotonic_ns':None,'winner_latency_ms':None,'shadow_headroom_ms':None}.items():data[k]=v
             if winner:
                 data.update(winner_relayer=winner['relayer'],winner_tx_hash=winner['tx_hash'],winner_block=winner['block_number'],winner_log_index=winner.get('log_index'),winner_fill_type=winner.get('fill_type'),winner_deposit_version_id=winner.get('deposit_version_id'),tw_monotonic_ns=winner.get('observed_monotonic_ns'),tw_wall_utc=winner.get('observed_wall_utc'))
