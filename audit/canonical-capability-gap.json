@@ -1,13 +1,1 @@
-{
-  "verified_at_sha": "741ca9f7d72923f7b13c1c2462ca90eba81e1a87",
-  "amendment": "001-A",
-  "decision_priority": ["REUSE_CANONICAL", "WRAP_THINLY", "MEASURE", "EXPERIMENT_IF_JUSTIFIED", "BUILD_LAST"],
-  "capabilities": [
-    {"requirement":"simulation","canonical_feature":"TransactionClient.simulate/_simulate/willSucceed","decision":"WRAP"},
-    {"requirement":"void_signer","canonical_feature":"CLI --wallet void / VoidSigner","decision":"REUSE"},
-    {"requirement":"event_listener","canonical_feature":"RELAYER_EXTERNAL_LISTENER + RELAYER_EVENT_LISTENER","decision":"EXPERIMENT"},
-    {"requirement":"profiler","canonical_feature":"Profiler / performance.now","decision":"WRAP"},
-    {"requirement":"speed_provider","canonical_feature":"AugmentedTransaction.spray + getSpeedProvider","decision":"REUSE_FUTURE_NO_LIVE"},
-    {"requirement":"inventory","canonical_feature":"InventoryClient","decision":"REUSE_INSPECT_ONLY"}
-  ]
-}
+{"verified_at_sha":"741ca9f7d72923f7b13c1c2462ca90eba81e1a87","amendment":"001-A","priority":["REUSE_CANONICAL","WRAP_THINLY","MEASURE","EXPERIMENT_IF_JUSTIFIED","BUILD_LAST"],"simulation":"WRAP","void_signer":"REUSE","event_listener":"EXPERIMENT","profiler":"WRAP","speed_provider":"REUSE_FUTURE_NO_LIVE","inventory":"REUSE_INSPECT_ONLY"}

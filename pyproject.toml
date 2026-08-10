@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "across-edge"
+version = "0.1.0"
+description = "Zero-spend Across relayer shadow measurement and safety harness"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+
+[project.scripts]
+across-edge = "across_edge.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = "-q"

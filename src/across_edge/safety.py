@@ -1,0 +1,42 @@
+from __future__ import annotations
+import os
+from dataclasses import dataclass
+from typing import Mapping, Sequence
+
+PROHIBITED_SECRET_KEYS={"PRIVATE_KEY","MNEMONIC","SECRET","ARWEAVE_WALLET_JWK","DISPATCHER_KEYS","GCKMS_CONFIG","GOOGLE_APPLICATION_CREDENTIALS"}
+PROHIBITED_TRUE_FLAGS={"SEND_RELAYS","SEND_TRANSACTIONS","SEND_SLOW_RELAYS"}
+LIVE_RPC_METHODS={"eth_sendRawTransaction","eth_sendTransaction","wallet_sendTransaction","eth_signTransaction","personal_sendTransaction"}
+READ_ONLY_RPC_METHODS={"eth_blockNumber","eth_getBlockByNumber","eth_getBlockByHash","eth_getLogs","eth_getTransactionByHash","eth_getTransactionReceipt","eth_getTransactionCount","eth_call","eth_estimateGas","eth_chainId","net_version","web3_clientVersion"}
+
+class SafetyViolation(RuntimeError): pass
+@dataclass(frozen=True)
+class SafetyState:
+    send_relays: bool
+    send_transactions: bool
+    wallet_type: str
+    secrets_present: tuple[str,...]
+
+def _truthy(v): return str(v or "").strip().lower() in {"1","true","yes","on"}
+
+def validate_shadow_environment(env: Mapping[str,str]|None=None, argv: Sequence[str]=()) -> SafetyState:
+    env=dict(os.environ if env is None else env)
+    secrets=tuple(sorted(k for k in PROHIBITED_SECRET_KEYS if env.get(k)))
+    if secrets: raise SafetyViolation("ORDER-001 forbids real secret material: "+", ".join(secrets))
+    enabled=tuple(sorted(k for k in PROHIBITED_TRUE_FLAGS if _truthy(env.get(k))))
+    if enabled: raise SafetyViolation("LIVE_EXECUTION_PROHIBITED_BY_ORDER_001: "+", ".join(enabled))
+    args=list(argv); wallet="void"
+    if "--wallet" in args:
+        i=args.index("--wallet")
+        if i+1>=len(args): raise SafetyViolation("--wallet requires a value")
+        wallet=args[i+1]
+    if wallet!="void": raise SafetyViolation("ORDER-001 requires upstream --wallet void")
+    return SafetyState(False,False,wallet,secrets)
+
+def assert_read_only_rpc_method(method: str)->None:
+    if method in LIVE_RPC_METHODS or method.startswith("eth_send"):
+        raise SafetyViolation(f"LIVE_EXECUTION_PROHIBITED_BY_ORDER_001: RPC method {method}")
+    if method not in READ_ONLY_RPC_METHODS:
+        raise SafetyViolation(f"RPC method is not allow-listed for ORDER-001: {method}")
+
+class ProhibitedBroadcaster:
+    def broadcast(self,*_args,**_kwargs): raise SafetyViolation("LIVE_EXECUTION_PROHIBITED_BY_ORDER_001")
