@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "repository": "https://github.com/across-protocol/relayer",
+  "ref": "741ca9f7d72923f7b13c1c2462ca90eba81e1a87",
+  "default_branch": "master",
+  "verified_utc": "2026-08-10T02:30:00Z",
+  "node_engine": ">=22.18.0",
+  "license": "AGPL-3.0-only",
+  "safe_cli": "SEND_RELAYS=false SEND_TRANSACTIONS=false yarn relay --wallet void --address 0x0000000000000000000000000000000000000000",
+  "contracts_reference": {"repository":"https://github.com/across-protocol/contracts","ref":"c959c80e6fbcce9a4b8e4b1321c70b0872297fa5","interface":"contracts/interfaces/V3SpokePoolInterface.sol"},
+  "sequencer_client_reference": {"repository":"https://github.com/nuntax/sequencer_client","ref":"96f5d856ec917e71f778cf726704d1049430d05f","license":"MIT"}
+}
