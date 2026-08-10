@@ -32,7 +32,7 @@ class Observer:
         r.candidate_type=state;r.decision_destination_time=destination_time
         if self.store.add_transition(r.run_id,r.trace_id,state,destination_time,source_chain_id=source_chain_id,source_block_number=source_block_number,source_block_hash=source_block_hash):r.candidate_state_history=self.store.transitions(r.run_id,r.trace_id)
     def refresh_candidate_states(self,run_id,destination_chain_id,destination_time,*,source_block_number=None,source_block_hash=None):
-        deps={f"{d['origin_chain_id']}:{d['deposit_id']":DepositEvent(**d) for d in self.store.all_deposits(run_id) if d['destination_chain_id']==destination_chain_id}
+        deps={f"{d['origin_chain_id']}:{d['deposit_id']}":DepositEvent(**d) for d in self.store.all_deposits(run_id) if d['destination_chain_id']==destination_chain_id}
         for row in self.store.shadow_rows(run_id):
             d=deps.get(row['deposit_key'])
             if d:
