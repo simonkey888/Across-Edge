@@ -2,7 +2,7 @@ from __future__ import annotations
 import hashlib,os,re,subprocess
 from pathlib import Path
 from typing import Mapping
-from .safety import validate_shadow_environment,sanitize_text
+from .safety import audit_upstream_dotenv,validate_shadow_environment,sanitize_text
 PINNED_SHA='741ca9f7d72923f7b13c1c2462ca90eba81e1a87';CANONICAL_REPO='across-protocol/relayer'
 def _git(path,*args):
     p=subprocess.run(['git','-C',str(path),*args],text=True,capture_output=True,check=False)
@@ -16,7 +16,7 @@ def verify_upstream_checkout(relayer_dir:str|Path)->dict:
     head=_git(relayer_dir,'rev-parse','HEAD');remote=_git(relayer_dir,'remote','get-url','origin')
     if normalize_remote(remote)!=CANONICAL_REPO:raise RuntimeError('unexpected upstream repository identity')
     if head!=PINNED_SHA:raise RuntimeError(f'upstream HEAD mismatch: expected {PINNED_SHA}, got {head}')
-    return {'repository':CANONICAL_REPO,'head':head}
+    dotenv=audit_upstream_dotenv(relayer_dir);return {'repository':CANONICAL_REPO,'head':head,'dotenv':dotenv}
 def sha256_file(path:str|Path)->str:
     h=hashlib.sha256();h.update(Path(path).read_bytes());return h.hexdigest()
 def verify_patch(path:str|Path,expected_sha256:str)->None:
