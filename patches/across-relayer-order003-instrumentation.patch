@@ -40,7 +40,7 @@ diff --git a/src/clients/MultiCallerClient.ts b/src/clients/MultiCallerClient.ts
 +  );
 +}
 +
- // @todo: MultiCallerClient should be generic.
+ // @todo: MultiCallerClient should be generic. For future, permit the class instantiator to supply their own
 @@ -220,5 +227,23 @@
        txnRequestsToSubmit.push(..._valueTxns.concat(await this.buildMultiCallBundles(_txns, this.chunkSize[chainId])));
      }
@@ -70,7 +70,7 @@ diff --git a/src/clients/MultiCallerClient.ts b/src/clients/MultiCallerClient.ts
        mrkdwn: mrkdwn.join(""),
 +      acrossEdgeTraceIds: sdkUtils.dedupArray(transactions.flatMap((txn) => txn.acrossEdgeTraceIds ?? [])),
      } as AugmentedTransaction;
-@@ -365,4 +391,5 @@
+@@ -365,3 +391,4 @@
        message: "Across multicall transaction",
        mrkdwn: mrkdwn.join(""),
 +      acrossEdgeTraceIds: sdkUtils.dedupArray(transactions.flatMap((txn) => txn.acrossEdgeTraceIds ?? [])),
