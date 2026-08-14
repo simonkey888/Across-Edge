@@ -143,7 +143,7 @@ CREATE TABLE IF NOT EXISTS decode_gaps(run_id TEXT NOT NULL,chain_id INTEGER NOT
         with self.transaction():
             if run_id is None:
                 doomed=[r['deposit_key'] for r in self.db.execute('SELECT deposit_key FROM deposits WHERE origin_chain_id=? AND block_number>=?',(chain_id,from_block)).fetchall()]
-                removed_rows=self.db.execute('SELECT event_id,tx_hash,deposit_key FROM fills_v2 WHERE destination_chain_id=? AND block_number>=?',(chain_id,from_block)).fetchall();affected_fill_keys=[r['deposit_key'] for r in removed_rows];removed_event_ids=[r['event_id'] for r in removed_rows]
+                removed_rows=self.db.execute('SELECT event_id,tx_hash,deposit_key FROM fills_v2 WHERE destination_chain_id=? AND block_number>=?',(chain_id,from_block)).fetchall();removed_event_ids=[r['event_id'] for r in removed_rows]
                 if removed_event_ids:
                     qs=','.join('?'*len(removed_event_ids));self.db.execute(f'UPDATE run_fills SET active=0 WHERE event_id IN ({qs})',tuple(removed_event_ids))
                 self.db.execute('DELETE FROM deposits WHERE origin_chain_id=? AND block_number>=?',(chain_id,from_block));self.db.execute('DELETE FROM fills_v2 WHERE destination_chain_id=? AND block_number>=?',(chain_id,from_block))
@@ -152,7 +152,7 @@ CREATE TABLE IF NOT EXISTS decode_gaps(run_id TEXT NOT NULL,chain_id INTEGER NOT
                     qs=','.join('?'*len(doomed));self.db.execute(f'DELETE FROM candidate_transitions WHERE trace_id IN (SELECT trace_id FROM shadow_records_v2 WHERE deposit_key IN ({qs}))',tuple(doomed));self.db.execute(f'DELETE FROM shadow_records_v2 WHERE deposit_key IN ({qs})',tuple(doomed))
                 self.db.execute('DELETE FROM candidate_transitions WHERE source_chain_id=? AND source_block_number>=?',(chain_id,from_block));self.db.execute('DELETE FROM decode_gaps WHERE chain_id=? AND block_number>=?',(chain_id,from_block))
                 for row in self.db.execute('SELECT run_id,trace_id,payload_json FROM shadow_records_v2').fetchall():
-                    d=json.loads(row['payload_json']);remaining=self.fills_for_deposit(d['deposit_key']);winner=next((f for f in remaining if int(f.get('fill_type',-1)) in {0,1}),None);self._restore_shadow_after_rewind(row['run_id'],row['trace_id'],d,chain_id,winner);self.db.execute('UPDATE shadow_records_v2 SET payload_json=? WHERE run_id=? AND trace_id=?',(json.dumps(d,sort_keys=True),row['run_id'],row['trace_id']))
+                    d=json.loads(row['payload_json']);remaining=self.fills_for_deposit(d['deposit_key'],row['run_id']);winner=next((f for f in remaining if int(f.get('fill_type',-1)) in {0,1}),None);self._restore_shadow_after_rewind(row['run_id'],row['trace_id'],d,chain_id,winner);self.db.execute('UPDATE shadow_records_v2 SET payload_json=? WHERE run_id=? AND trace_id=?',(json.dumps(d,sort_keys=True),row['run_id'],row['trace_id']))
                 self.db.execute('DELETE FROM cursors WHERE chain_id=?',(chain_id,));return
             doomed=[r['deposit_key'] for r in self.db.execute('SELECT deposit_key FROM run_deposit_snapshots WHERE run_id=? AND json_extract(payload_json,\'$.origin_chain_id\')=? AND json_extract(payload_json,\'$.block_number\')>=?',(run_id,chain_id,from_block)).fetchall()]
             unique_doomed=sorted(set(doomed))
