@@ -60,12 +60,16 @@ CREATE TABLE IF NOT EXISTS decode_gaps(run_id TEXT NOT NULL,chain_id INTEGER NOT
         if commit:self.db.commit()
         return cur.rowcount==1
     def link_fill(self,run_id,event_id,active=True,*,payload=None):
+        prior=self.db.execute('SELECT active FROM run_fills WHERE run_id=? AND event_id=?',(run_id,event_id)).fetchone();was_active=bool(prior and prior['active'])
         self.db.execute('INSERT INTO run_fills VALUES(?,?,?) ON CONFLICT(run_id,event_id) DO UPDATE SET active=excluded.active',(run_id,event_id,int(active)))
-        if active and payload is not None:self.db.execute('INSERT OR REPLACE INTO run_fill_observations VALUES(?,?,?,?)',(run_id,event_id,json.dumps(payload,sort_keys=True),_utc()))
+        if active and payload is not None:
+            packed=json.dumps(payload,sort_keys=True)
+            if prior is None:self.db.execute('INSERT INTO run_fill_observations VALUES(?,?,?,?)',(run_id,event_id,packed,_utc()))
+            elif not was_active:self.db.execute('INSERT OR REPLACE INTO run_fill_observations VALUES(?,?,?,?)',(run_id,event_id,packed,_utc()))
         self.db.commit()
     def fills_for_deposit(self,key:str,run_id:str|None=None)->list[dict]:
         if run_id is None:q='SELECT payload_json FROM fills_v2 WHERE deposit_key=? ORDER BY block_number,log_index,tx_hash,event_id';args=(key,)
-        else:q='SELECT o.payload_json FROM run_fill_observations o JOIN run_fills rf ON rf.event_id=o.event_id AND rf.run_id=? AND rf.active=1 JOIN fills_v2 f ON f.event_id=o.event_id WHERE f.deposit_key=? ORDER BY f.block_number,f.log_index,f.tx_hash,f.event_id';args=(run_id,key)
+        else:q='SELECT o.payload_json FROM run_fill_observations o JOIN run_fills rf ON rf.event_id=o.event_id AND rf.run_id=o.run_id AND rf.run_id=? AND rf.active=1 JOIN fills_v2 f ON f.event_id=o.event_id WHERE o.run_id=? AND f.deposit_key=? ORDER BY f.block_number,f.log_index,f.tx_hash,f.event_id';args=(run_id,run_id,key)
         return [json.loads(r[0]) for r in self.db.execute(q,args).fetchall()]
     def upsert_shadow(self,r:ShadowRecord,*,commit=True):
         if r.trace_id:self.db.execute('INSERT OR REPLACE INTO shadow_records_v2 VALUES(?,?,?,?,?)',(r.run_id,r.trace_id,r.deposit_key,r.schema_version,json.dumps(r.as_dict(),sort_keys=True)))
@@ -84,7 +88,7 @@ CREATE TABLE IF NOT EXISTS decode_gaps(run_id TEXT NOT NULL,chain_id INTEGER NOT
         return [json.loads(r[0]) for r in rows]
     def all_fills(self,run_id:str|None=None)->list[dict]:
         if run_id is None:rows=self.db.execute('SELECT payload_json FROM fills_v2 ORDER BY block_number,log_index,tx_hash,event_id').fetchall()
-        else:rows=self.db.execute('SELECT o.payload_json FROM run_fill_observations o JOIN run_fills r ON r.event_id=o.event_id AND r.run_id=? AND r.active=1 JOIN fills_v2 f ON f.event_id=o.event_id ORDER BY f.block_number,f.log_index,f.tx_hash,f.event_id',(run_id,)).fetchall()
+        else:rows=self.db.execute('SELECT o.payload_json FROM run_fill_observations o JOIN run_fills r ON r.event_id=o.event_id AND r.run_id=o.run_id AND r.run_id=? AND r.active=1 JOIN fills_v2 f ON f.event_id=o.event_id WHERE o.run_id=? ORDER BY f.block_number,f.log_index,f.tx_hash,f.event_id',(run_id,run_id)).fetchall()
         if not rows and run_id is None:rows=self.db.execute('SELECT payload_json FROM fills ORDER BY block_number,tx_hash').fetchall()
         return [json.loads(r[0]) for r in rows]
     def add_transition(self,run_id:str,trace_id:str,state:str,destination_time:int,*,source_chain_id:int|None=None,source_block_number:int|None=None,source_block_hash:str|None=None,commit=True)->bool:
@@ -122,22 +126,40 @@ CREATE TABLE IF NOT EXISTS decode_gaps(run_id TEXT NOT NULL,chain_id INTEGER NOT
         traces=[r['trace_id'] for r in self.db.execute('SELECT trace_id FROM shadow_records_v2 WHERE run_id=? AND deposit_key=?',(run_id,key)).fetchall()]
         for trace in traces:self.db.execute('DELETE FROM candidate_transitions WHERE run_id=? AND trace_id=?',(run_id,trace));self.db.execute('DELETE FROM evaluation_attempt_events WHERE run_id=? AND evaluation_attempt_id=?',(run_id,trace));self.db.execute('DELETE FROM evaluation_attempts WHERE run_id=? AND evaluation_attempt_id=?',(run_id,trace));self.db.execute('DELETE FROM active_attempts WHERE run_id=? AND evaluation_attempt_id=?',(run_id,trace))
         self.db.execute('DELETE FROM shadow_records_v2 WHERE run_id=? AND deposit_key=?',(run_id,key));self.db.execute('DELETE FROM deposit_versions WHERE run_id=? AND deposit_key=?',(run_id,key));self.db.execute('DELETE FROM deposit_aggregates WHERE run_id=? AND deposit_key=?',(run_id,key));self.db.execute('DELETE FROM run_deposit_snapshots WHERE run_id=? AND deposit_key=?',(run_id,key))
+    @staticmethod
+    def _clear_winner_fields(d):
+        for k,v in {'winner_relayer':'','winner_tx_hash':'','winner_block':None,'winner_log_index':None,'winner_fill_type':None,'winner_deposit_version_id':None,'tw_wall_utc':None,'tw_monotonic_ns':None,'winner_latency_ms':None,'shadow_headroom_ms':None}.items():d[k]=v
+    @staticmethod
+    def _apply_winner(d,winner):
+        Store._clear_winner_fields(d)
+        if winner:d.update(winner_relayer=winner['relayer'],winner_tx_hash=winner['tx_hash'],winner_block=winner['block_number'],winner_log_index=winner.get('log_index'),winner_fill_type=winner.get('fill_type'),winner_deposit_version_id=winner.get('deposit_version_id'),tw_wall_utc=winner.get('observed_wall_utc'),tw_monotonic_ns=winner.get('observed_monotonic_ns'))
     def rewind_chain(self,chain_id,from_block,run_id=None):
         with self.transaction():
             if run_id is None:
-                doomed=[r['deposit_key'] for r in self.db.execute('SELECT deposit_key FROM deposits WHERE origin_chain_id=? AND block_number>=?',(chain_id,from_block)).fetchall()];self.db.execute('DELETE FROM deposits WHERE origin_chain_id=? AND block_number>=?',(chain_id,from_block));removed=[r['tx_hash'] for r in self.db.execute('SELECT tx_hash FROM fills_v2 WHERE destination_chain_id=? AND block_number>=?',(chain_id,from_block)).fetchall()];self.db.execute('DELETE FROM fills_v2 WHERE destination_chain_id=? AND block_number>=?',(chain_id,from_block));
+                doomed=[r['deposit_key'] for r in self.db.execute('SELECT deposit_key FROM deposits WHERE origin_chain_id=? AND block_number>=?',(chain_id,from_block)).fetchall()]
+                affected_fill_keys=[r['deposit_key'] for r in self.db.execute('SELECT DISTINCT deposit_key FROM fills_v2 WHERE destination_chain_id=? AND block_number>=?',(chain_id,from_block)).fetchall()]
+                self.db.execute('DELETE FROM deposits WHERE origin_chain_id=? AND block_number>=?',(chain_id,from_block));removed=[r['tx_hash'] for r in self.db.execute('SELECT tx_hash FROM fills_v2 WHERE destination_chain_id=? AND block_number>=?',(chain_id,from_block)).fetchall()];self.db.execute('DELETE FROM fills_v2 WHERE destination_chain_id=? AND block_number>=?',(chain_id,from_block))
                 for tx in removed:self.db.execute('DELETE FROM fills WHERE tx_hash=?',(tx,))
                 if doomed:
                     qs=','.join('?'*len(doomed));self.db.execute(f'DELETE FROM candidate_transitions WHERE trace_id IN (SELECT trace_id FROM shadow_records_v2 WHERE deposit_key IN ({qs}))',tuple(doomed));self.db.execute(f'DELETE FROM shadow_records_v2 WHERE deposit_key IN ({qs})',tuple(doomed))
+                for key in sorted(set(affected_fill_keys)):
+                    remaining=self.fills_for_deposit(key);winner=next((f for f in remaining if int(f.get('fill_type',-1)) in {0,1}),None)
+                    for row in self.db.execute('SELECT run_id,trace_id,payload_json FROM shadow_records_v2 WHERE deposit_key=?',(key,)).fetchall():
+                        d=json.loads(row['payload_json']);self._apply_winner(d,winner);self.db.execute('UPDATE shadow_records_v2 SET payload_json=? WHERE run_id=? AND trace_id=?',(json.dumps(d,sort_keys=True),row['run_id'],row['trace_id']))
                 self.db.execute('DELETE FROM cursors WHERE chain_id=?',(chain_id,));return
             doomed=[r['deposit_key'] for r in self.db.execute('SELECT deposit_key FROM run_deposit_snapshots WHERE run_id=? AND json_extract(payload_json,\'$.origin_chain_id\')=? AND json_extract(payload_json,\'$.block_number\')>=?',(run_id,chain_id,from_block)).fetchall()]
-            for key in sorted(set(doomed)):self._clear_run_deposit(run_id,key)
-            self.db.execute('UPDATE run_deposits SET active=0 WHERE run_id=? AND deposit_key IN (SELECT deposit_key FROM run_deposit_snapshots WHERE run_id=? AND json_extract(payload_json,\'$.origin_chain_id\')=? AND json_extract(payload_json,\'$.block_number\')>=?)',(run_id,run_id,chain_id,from_block));self.db.execute('UPDATE run_fills SET active=0 WHERE run_id=? AND event_id IN (SELECT event_id FROM fills_v2 WHERE destination_chain_id=? AND block_number>=?)',(run_id,chain_id,from_block));self.db.execute('DELETE FROM candidate_transitions WHERE run_id=? AND source_chain_id=? AND source_block_number>=?',(run_id,chain_id,from_block));self.db.execute('DELETE FROM decode_gaps WHERE run_id=? AND chain_id=? AND block_number>=?',(run_id,chain_id,from_block));self.db.execute('DELETE FROM run_cursors WHERE run_id=? AND chain_id=?',(run_id,chain_id))
+            unique_doomed=sorted(set(doomed))
+            if unique_doomed:
+                qs=','.join('?'*len(unique_doomed));self.db.execute(f'UPDATE run_deposits SET active=0 WHERE run_id=? AND deposit_key IN ({qs})',(run_id,*unique_doomed))
+            for key in unique_doomed:self._clear_run_deposit(run_id,key)
+            self.db.execute('UPDATE run_fills SET active=0 WHERE run_id=? AND event_id IN (SELECT event_id FROM fills_v2 WHERE destination_chain_id=? AND block_number>=?)',(run_id,chain_id,from_block));self.db.execute('DELETE FROM candidate_transitions WHERE run_id=? AND source_chain_id=? AND source_block_number>=?',(run_id,chain_id,from_block));self.db.execute('DELETE FROM decode_gaps WHERE run_id=? AND chain_id=? AND block_number>=?',(run_id,chain_id,from_block));self.db.execute('DELETE FROM run_cursors WHERE run_id=? AND chain_id=?',(run_id,chain_id))
             for row in self.db.execute('SELECT trace_id,payload_json FROM shadow_records_v2 WHERE run_id=?',(run_id,)).fetchall():
-                d=json.loads(row['payload_json']);fills=self.fills_for_deposit(d['deposit_key'],run_id);winner=next((f for f in fills if int(f.get('fill_type',-1)) in {0,1}),None)
+                d=json.loads(row['payload_json']);hist=self.transitions(run_id,row['trace_id'])
                 if d.get('destination_chain_id')==chain_id:
-                    for k,v in {'winner_relayer':'','winner_tx_hash':'','winner_block':None,'winner_log_index':None,'winner_fill_type':None,'winner_deposit_version_id':None,'tw_wall_utc':None,'tw_monotonic_ns':None,'winner_latency_ms':None,'shadow_headroom_ms':None}.items():d[k]=v
-                    if winner:d.update(winner_relayer=winner['relayer'],winner_tx_hash=winner['tx_hash'],winner_block=winner['block_number'],winner_log_index=winner.get('log_index'),winner_fill_type=winner.get('fill_type'),winner_deposit_version_id=winner.get('deposit_version_id'),tw_wall_utc=winner.get('observed_wall_utc'),tw_monotonic_ns=winner.get('observed_monotonic_ns'))
-                    self.db.execute('UPDATE shadow_records_v2 SET payload_json=? WHERE run_id=? AND trace_id=?',(json.dumps(d,sort_keys=True),run_id,row['trace_id']))
+                    d['candidate_state_history']=hist
+                    if hist:d['candidate_type']=hist[-1]['state'];d['decision_destination_time']=hist[-1]['destination_time']
+                    else:d['candidate_type']='other';d['decision_destination_time']=None
+                fills=self.fills_for_deposit(d['deposit_key'],run_id);winner=next((f for f in fills if int(f.get('fill_type',-1)) in {0,1}),None);self._apply_winner(d,winner)
+                self.db.execute('UPDATE shadow_records_v2 SET payload_json=? WHERE run_id=? AND trace_id=?',(json.dumps(d,sort_keys=True),run_id,row['trace_id']))
     def get_attempt(self,run_id,attempt_id):
         r=self.db.execute('SELECT * FROM evaluation_attempts WHERE run_id=? AND evaluation_attempt_id=?',(run_id,attempt_id)).fetchone();return dict(r) if r else None
