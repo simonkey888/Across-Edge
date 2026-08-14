@@ -133,19 +133,26 @@ CREATE TABLE IF NOT EXISTS decode_gaps(run_id TEXT NOT NULL,chain_id INTEGER NOT
     def _apply_winner(d,winner):
         Store._clear_winner_fields(d)
         if winner:d.update(winner_relayer=winner['relayer'],winner_tx_hash=winner['tx_hash'],winner_block=winner['block_number'],winner_log_index=winner.get('log_index'),winner_fill_type=winner.get('fill_type'),winner_deposit_version_id=winner.get('deposit_version_id'),tw_wall_utc=winner.get('observed_wall_utc'),tw_monotonic_ns=winner.get('observed_monotonic_ns'))
+    def _restore_shadow_after_rewind(self,run_id,trace_id,d,chain_id,winner):
+        hist=self.transitions(run_id,trace_id);d['candidate_state_history']=hist
+        if d.get('destination_chain_id')==chain_id:
+            if hist:d['candidate_type']=hist[-1]['state'];d['decision_destination_time']=hist[-1]['destination_time']
+            else:d['candidate_type']='other';d['decision_destination_time']=None
+        self._apply_winner(d,winner);return d
     def rewind_chain(self,chain_id,from_block,run_id=None):
         with self.transaction():
             if run_id is None:
                 doomed=[r['deposit_key'] for r in self.db.execute('SELECT deposit_key FROM deposits WHERE origin_chain_id=? AND block_number>=?',(chain_id,from_block)).fetchall()]
-                affected_fill_keys=[r['deposit_key'] for r in self.db.execute('SELECT DISTINCT deposit_key FROM fills_v2 WHERE destination_chain_id=? AND block_number>=?',(chain_id,from_block)).fetchall()]
-                self.db.execute('DELETE FROM deposits WHERE origin_chain_id=? AND block_number>=?',(chain_id,from_block));removed=[r['tx_hash'] for r in self.db.execute('SELECT tx_hash FROM fills_v2 WHERE destination_chain_id=? AND block_number>=?',(chain_id,from_block)).fetchall()];self.db.execute('DELETE FROM fills_v2 WHERE destination_chain_id=? AND block_number>=?',(chain_id,from_block))
-                for tx in removed:self.db.execute('DELETE FROM fills WHERE tx_hash=?',(tx,))
+                removed_rows=self.db.execute('SELECT event_id,tx_hash,deposit_key FROM fills_v2 WHERE destination_chain_id=? AND block_number>=?',(chain_id,from_block)).fetchall();affected_fill_keys=[r['deposit_key'] for r in removed_rows];removed_event_ids=[r['event_id'] for r in removed_rows]
+                if removed_event_ids:
+                    qs=','.join('?'*len(removed_event_ids));self.db.execute(f'UPDATE run_fills SET active=0 WHERE event_id IN ({qs})',tuple(removed_event_ids))
+                self.db.execute('DELETE FROM deposits WHERE origin_chain_id=? AND block_number>=?',(chain_id,from_block));self.db.execute('DELETE FROM fills_v2 WHERE destination_chain_id=? AND block_number>=?',(chain_id,from_block))
+                for r in removed_rows:self.db.execute('DELETE FROM fills WHERE tx_hash=?',(r['tx_hash'],))
                 if doomed:
                     qs=','.join('?'*len(doomed));self.db.execute(f'DELETE FROM candidate_transitions WHERE trace_id IN (SELECT trace_id FROM shadow_records_v2 WHERE deposit_key IN ({qs}))',tuple(doomed));self.db.execute(f'DELETE FROM shadow_records_v2 WHERE deposit_key IN ({qs})',tuple(doomed))
-                for key in sorted(set(affected_fill_keys)):
-                    remaining=self.fills_for_deposit(key);winner=next((f for f in remaining if int(f.get('fill_type',-1)) in {0,1}),None)
-                    for row in self.db.execute('SELECT run_id,trace_id,payload_json FROM shadow_records_v2 WHERE deposit_key=?',(key,)).fetchall():
-                        d=json.loads(row['payload_json']);self._apply_winner(d,winner);self.db.execute('UPDATE shadow_records_v2 SET payload_json=? WHERE run_id=? AND trace_id=?',(json.dumps(d,sort_keys=True),row['run_id'],row['trace_id']))
+                self.db.execute('DELETE FROM candidate_transitions WHERE source_chain_id=? AND source_block_number>=?',(chain_id,from_block));self.db.execute('DELETE FROM decode_gaps WHERE chain_id=? AND block_number>=?',(chain_id,from_block))
+                for row in self.db.execute('SELECT run_id,trace_id,payload_json FROM shadow_records_v2').fetchall():
+                    d=json.loads(row['payload_json']);remaining=self.fills_for_deposit(d['deposit_key']);winner=next((f for f in remaining if int(f.get('fill_type',-1)) in {0,1}),None);self._restore_shadow_after_rewind(row['run_id'],row['trace_id'],d,chain_id,winner);self.db.execute('UPDATE shadow_records_v2 SET payload_json=? WHERE run_id=? AND trace_id=?',(json.dumps(d,sort_keys=True),row['run_id'],row['trace_id']))
                 self.db.execute('DELETE FROM cursors WHERE chain_id=?',(chain_id,));return
             doomed=[r['deposit_key'] for r in self.db.execute('SELECT deposit_key FROM run_deposit_snapshots WHERE run_id=? AND json_extract(payload_json,\'$.origin_chain_id\')=? AND json_extract(payload_json,\'$.block_number\')>=?',(run_id,chain_id,from_block)).fetchall()]
             unique_doomed=sorted(set(doomed))
@@ -154,12 +161,6 @@ CREATE TABLE IF NOT EXISTS decode_gaps(run_id TEXT NOT NULL,chain_id INTEGER NOT
             for key in unique_doomed:self._clear_run_deposit(run_id,key)
             self.db.execute('UPDATE run_fills SET active=0 WHERE run_id=? AND event_id IN (SELECT event_id FROM fills_v2 WHERE destination_chain_id=? AND block_number>=?)',(run_id,chain_id,from_block));self.db.execute('DELETE FROM candidate_transitions WHERE run_id=? AND source_chain_id=? AND source_block_number>=?',(run_id,chain_id,from_block));self.db.execute('DELETE FROM decode_gaps WHERE run_id=? AND chain_id=? AND block_number>=?',(run_id,chain_id,from_block));self.db.execute('DELETE FROM run_cursors WHERE run_id=? AND chain_id=?',(run_id,chain_id))
             for row in self.db.execute('SELECT trace_id,payload_json FROM shadow_records_v2 WHERE run_id=?',(run_id,)).fetchall():
-                d=json.loads(row['payload_json']);hist=self.transitions(run_id,row['trace_id'])
-                if d.get('destination_chain_id')==chain_id:
-                    d['candidate_state_history']=hist
-                    if hist:d['candidate_type']=hist[-1]['state'];d['decision_destination_time']=hist[-1]['destination_time']
-                    else:d['candidate_type']='other';d['decision_destination_time']=None
-                fills=self.fills_for_deposit(d['deposit_key'],run_id);winner=next((f for f in fills if int(f.get('fill_type',-1)) in {0,1}),None);self._apply_winner(d,winner)
-                self.db.execute('UPDATE shadow_records_v2 SET payload_json=? WHERE run_id=? AND trace_id=?',(json.dumps(d,sort_keys=True),run_id,row['trace_id']))
+                d=json.loads(row['payload_json']);fills=self.fills_for_deposit(d['deposit_key'],run_id);winner=next((f for f in fills if int(f.get('fill_type',-1)) in {0,1}),None);self._restore_shadow_after_rewind(run_id,row['trace_id'],d,chain_id,winner);self.db.execute('UPDATE shadow_records_v2 SET payload_json=? WHERE run_id=? AND trace_id=?',(json.dumps(d,sort_keys=True),run_id,row['trace_id']))
     def get_attempt(self,run_id,attempt_id):
         r=self.db.execute('SELECT * FROM evaluation_attempts WHERE run_id=? AND evaluation_attempt_id=?',(run_id,attempt_id)).fetchone();return dict(r) if r else None
