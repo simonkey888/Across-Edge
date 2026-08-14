@@ -22,13 +22,21 @@ class ShadowCoordinator:
         version_id,fp,provenance,fields=deposit_version_identity(e,attempt_id);key=str(e['deposit_key']);self.store.create_version(self.run_id,key,version_id,fp,provenance,fields)
         r=ShadowRecord(CURRENT_SCHEMA_VERSION,self.run_id,key,int(e['origin_chain_id']),int(e['deposit_id']),int(e['destination_chain_id']),str(e.get('input_token','')),str(e.get('output_token','')),int(e.get('input_amount',0)),int(e.get('output_amount',0)),str(e.get('exclusive_relayer','')),int(e.get('exclusivity_deadline',0)),str(e.get('candidate_type','other')),trace_id=attempt_id,evaluation_attempt_id=attempt_id,upstream_trace_id=upstream_trace,deposit_version_id=version_id,deposit_version_fingerprint=fp,deposit_version_provenance=provenance,deposit_block=int(e.get('deposit_block',0)) if e.get('deposit_block') is not None else None)
         self.store.create_attempt(self.run_id,attempt_id,upstream_trace,key,version_id,received_ns,e);self.store.link_deposit(self.run_id,key,True,version_id=version_id,payload=e);return r
+    def _refresh_repeated_t0(self,r:ShadowRecord,e:dict)->ShadowRecord:
+        for key in ('decision_destination_time','deposit_block','max_block_number','live_equivalent_confirmations_satisfied','simulation_early_not_live_actionable','first_actionable_destination_time'):
+            if key in e:setattr(r,key,e[key])
+        self.store.upsert_shadow(r);self.observer.reconcile_deposit(self.run_id,r.deposit_key);return r
     def ingest_line(self,line:str,*,at_ns:int|None=None)->ShadowRecord|None:
         received_ns=perf_counter_ns() if at_ns is None else at_ns;e=self.parse_line(line)
         if e is None:return None
         upstream_trace=str(e['trace_id'])
         if e['stage']=='T0':
-            active=self.store.active_attempt(self.run_id,upstream_trace)
-            if active and self.store.shadow_by_trace(self.run_id,active) and self.store.shadow_by_trace(self.run_id,active).get('t0_monotonic_ns') is not None:self.store.db.execute('DELETE FROM active_attempts WHERE run_id=? AND upstream_trace_id=?',(self.run_id,upstream_trace));self.store.db.commit()
+            active=self.store.active_attempt(self.run_id,upstream_trace);row=self.store.shadow_by_trace(self.run_id,active) if active else None
+            if row and row.get('t0_monotonic_ns') is not None:
+                current_fp=deposit_version_identity(e,active)[1];has_downstream=any(row.get(name) is not None for name in ('ta_monotonic_ns','t1_monotonic_ns','t2_monotonic_ns','t3_monotonic_ns'))
+                if current_fp==row.get('deposit_version_fingerprint') and not has_downstream:
+                    return self._refresh_repeated_t0(ShadowRecord(**row),e)
+                self.store.db.execute('DELETE FROM active_attempts WHERE run_id=? AND upstream_trace_id=?',(self.run_id,upstream_trace));self.store.db.commit()
             r=self._new_attempt(e,received_ns)
         else:
             attempt_id=self.store.active_attempt(self.run_id,upstream_trace)
