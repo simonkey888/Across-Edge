@@ -1,0 +1,65 @@
+{
+  "order": "008",
+  "checkpoint": "corrective-comment-5288891689",
+  "status": "BLOCKED_AFTER_CORRECTIVE_SOURCE",
+  "generated_at": "2026-08-14T03:58:32Z",
+  "source_head_sha": "157a21f82c7172dea267b239a8accb7fd289ed06",
+  "main_sha": "044d195f134178b6127af5dd3f5ad7d660d32e54",
+  "pr": 2,
+  "branch": "order-001-shadow-relayer",
+  "upstream_pin": "741ca9f7d72923f7b13c1c2462ca90eba81e1a87",
+  "upstream_pin_changed": false,
+  "patch_sha256": "8cf71677303d75a178f5a9a79c0a3127935afcf753623668b55a5535fe25ce19",
+  "corrective_source": {
+    "repeated_t0_attempt_identity": "IMPLEMENTED",
+    "run_local_fill_observation_isolation": "IMPLEMENTED",
+    "duplicate_fill_first_observation_preserved": "IMPLEMENTED",
+    "reorg_replay_observation_refresh": "IMPLEMENTED",
+    "run_specific_candidate_state_restore": "IMPLEMENTED",
+    "run_specific_rewind_ordering": "IMPLEMENTED",
+    "global_rewind_winner_reconciliation": "IMPLEMENTED_RUN_SCOPED",
+    "fixture_recipient_output_amount": "IMPLEMENTED",
+    "deterministic_reorg_wall_time_fixture": "IMPLEMENTED",
+    "patch_hunk_headers": "CORRECTED",
+    "patch_manifest_hash": "UPDATED"
+  },
+  "fresh_rerun": {
+    "pytest": "NOT_EXECUTED_AFTER_CORRECTION",
+    "compileall": "NOT_EXECUTED_AFTER_CORRECTION",
+    "secret_scan": "NOT_EXECUTED_AFTER_CORRECTION",
+    "safety_runtime": "NOT_EXECUTED_AFTER_CORRECTION",
+    "patch_hunk_validator": "NOT_EXECUTED_AFTER_CORRECTION",
+    "git_apply_check": "NOT_EXECUTED_AFTER_CORRECTION",
+    "actual_patch_apply": "NOT_EXECUTED_AFTER_CORRECTION",
+    "upstream_install_build_tests": "NOT_EXECUTED_AFTER_CORRECTION",
+    "network_smoke": "NOT_REACHED",
+    "zero_write_shadow_smoke": "NOT_REACHED"
+  },
+  "execution_environment_blocker": {
+    "codespaces_authenticated_user_list": "ACCESSIBLE_BUT_EMPTY",
+    "codespaces_authenticated_user_total_count": 0,
+    "repository_codespaces_api": "HTTP_403_RESOURCE_NOT_ACCESSIBLE_BY_INTEGRATION",
+    "codespaces_create_start_tool": "NOT_EXPOSED_BY_CONNECTED_GITHUB_INTEGRATION",
+    "github_actions_latest_run_id": 31767779182,
+    "github_actions_latest_job_id": 94667091496,
+    "github_actions_head_sha": "157a21f82c7172dea267b239a8accb7fd289ed06",
+    "github_actions_steps": 0,
+    "github_actions_failure_class": "ACCOUNT_BILLING_OR_SPENDING_LIMIT_PREVENTED_RUNNER_START",
+    "github_actions_annotation_sanitized": "The job was not started because recent account payments have failed or the spending limit needs to be increased."
+  },
+  "known_limitations": [
+    "No post-correction Codespaces process could be created or started from the connected GitHub integration.",
+    "GitHub Actions still fails before runner allocation and therefore provides no software execution evidence.",
+    "No fresh PASS is claimed for tests, upstream runtime, network, or shadow execution."
+  ],
+  "safety": {
+    "authorized_spend_usd": 0,
+    "private_keys_used": 0,
+    "transactions_broadcast": 0,
+    "onchain_value_transfer": 0,
+    "write_rpc": 0,
+    "live_financial_execution": 0,
+    "merge": false,
+    "main_mutation": false
+  }
+}
