@@ -65,6 +65,19 @@ def test_patch_economics_binding_uses_optional_canonical_profit_fields():
     assert '?? "UNKNOWN"' in p
 
 
+def test_repayment_profitability_helper_return_type_carries_observed_economics():
+    p = patch()
+    helper_hunk = p.split('@@ -1422,5 +1501,10 @@', 1)[1].split('@@ -1430,12 +1514,22 @@', 1)[0]
+    for field in (
+        'inputAmountUsd?: BigNumber;',
+        'outputAmountUsd?: BigNumber;',
+        'grossRelayerFeeUsd?: BigNumber;',
+        'nativeTokenFillCostUsd?: BigNumber;',
+        'netRelayerFeeUsd?: BigNumber;',
+    ):
+        assert field in helper_hunk
+
+
 def test_patch_contains_runtime_regressions_for_unsigned_prepare_and_economics():
     p = patch()
     assert 'Prepares deterministic unsigned transaction without signing or sending' in p
@@ -74,7 +87,15 @@ def test_patch_contains_runtime_regressions_for_unsigned_prepare_and_economics()
     assert 'expect(sendTransaction.called).to.be.false' in p
 
 
-def test_patch_hunk_headers_match_payload_counts():
+def test_transaction_client_import_hunk_has_normal_context_for_plain_git_apply():
+    p = patch()
+    assert '@@ -10,1 +10,1 @@' not in p
+    assert '@@ -10,7 +10,7 @@' in p
+    assert ' import { CHAIN_ID_TEST_LIST as chainIds } from "./constants";' in p
+    assert ' const { spyLogger }: { spyLogger: winston.Logger } = createSpyLogger();' in p
+
+
+def test_patch_hunk_headers_match_payload_counts_and_require_context():
     lines = patch().splitlines()
     for i, line in enumerate(lines):
         if not line.startswith('@@'):
@@ -83,7 +104,7 @@ def test_patch_hunk_headers_match_payload_counts():
         assert match, f'invalid hunk header: {line}'
         expected_old = int(match.group(2) or 1)
         expected_new = int(match.group(4) or 1)
-        old_count = new_count = 0
+        old_count = new_count = context_count = 0
         j = i + 1
         while j < len(lines) and not lines[j].startswith('@@') and not lines[j].startswith('diff --git '):
             payload = lines[j]
@@ -101,6 +122,8 @@ def test_patch_hunk_headers_match_payload_counts():
                 old_count += 1
             if payload[0] in ' +':
                 new_count += 1
+            if payload[0] == ' ':
+                context_count += 1
             j += 1
         assert (old_count, new_count) == (expected_old, expected_new), (
             line,
@@ -109,3 +132,4 @@ def test_patch_hunk_headers_match_payload_counts():
             expected_old,
             expected_new,
         )
+        assert context_count > 0, f'zero-context hunk is incompatible with canonical plain git apply: {line}'
