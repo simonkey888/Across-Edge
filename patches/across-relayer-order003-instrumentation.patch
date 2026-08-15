@@ -308,7 +308,18 @@ diff --git a/src/relayer/Relayer.ts b/src/relayer/Relayer.ts
 +        acrossEdgeTraceIds: acrossEdgeTrace ? [acrossEdgeTrace] : undefined,
 +      });
      } else {
-@@ -1430,12 +1509,22 @@
+@@ -1422,5 +1501,10 @@
+       gasPrice: BigNumber;
+       relayerFeePct: BigNumber;
+       totalUserFeePct: BigNumber;
++      inputAmountUsd?: BigNumber;
++      outputAmountUsd?: BigNumber;
++      grossRelayerFeeUsd?: BigNumber;
++      nativeTokenFillCostUsd?: BigNumber;
++      netRelayerFeeUsd?: BigNumber;
+     }> => {
+       const {
+@@ -1430,12 +1514,22 @@
          gasPrice,
          netRelayerFeePct: relayerFeePct,
          totalFeePct: totalUserFeePct,
@@ -331,7 +342,7 @@ diff --git a/src/relayer/Relayer.ts b/src/relayer/Relayer.ts
 +        nativeTokenFillCostUsd,
 +        netRelayerFeeUsd,
        };
-@@ -1475,8 +1564,13 @@
+@@ -1475,8 +1569,13 @@
        return {
          gasLimit,
          gasCost,
@@ -349,9 +360,15 @@ diff --git a/src/relayer/Relayer.ts b/src/relayer/Relayer.ts
 diff --git a/test/TransactionClient.ts b/test/TransactionClient.ts
 --- a/test/TransactionClient.ts
 +++ b/test/TransactionClient.ts
-@@ -10,1 +10,1 @@
+@@ -10,7 +10,7 @@
+ import { CHAIN_ID_TEST_LIST as chainIds } from "./constants";
+ import { MockedTransactionClient, txnClientPassResult } from "./mocks/MockTransactionClient";
 -import { createSpyLogger, Contract, expect, randomAddress, toBN, winston, ethers as testEthers } from "./utils";
 +import { assertPromiseError, createSpyLogger, Contract, expect, randomAddress, sinon, toBN, winston, ethers as testEthers } from "./utils";
+ 
+ const { spyLogger }: { spyLogger: winston.Logger } = createSpyLogger();
+ const address = randomAddress(); // Test contract address
+ const method = "testMethod";
 @@ -125,5 +125,76 @@
      expect(isDefined(gasLimit)).to.be.true;
      expect((gasLimit as BigNumber).gt(0)).to.be.true;
