@@ -8,7 +8,7 @@ diff --git a/src/clients/TransactionClient.ts b/src/clients/TransactionClient.ts
 +  // Across-Edge ORDER-003 read-only instrumentation. Trace IDs never contain credentials.
 +  acrossEdgeTraceIds?: string[];
  }
-@@ -121,5 +121,18 @@
+@@ -121,5 +121,41 @@
    simulate(txns: AugmentedTransaction[]): Promise<TransactionSimulationResult[]> {
      return Promise.all(txns.map((txn: AugmentedTransaction) => this._simulate(txn)));
    }
@@ -16,13 +16,36 @@ diff --git a/src/clients/TransactionClient.ts b/src/clients/TransactionClient.ts
 +  /** Populate and serialize an unsigned transaction without signing or submitting it. */
 +  async prepare(txn: AugmentedTransaction): Promise<{ serialized: string }> {
 +    const { contract, method, args, value = bnZero, gasLimit } = txn;
-+    const populated =
++    const populated: ethers.providers.TransactionRequest =
 +      method === ""
 +        ? { to: contract.address, data: args[0] as ethers.utils.BytesLike, value }
 +        : await contract.populateTransaction[method](...args, { value });
 +    if (isDefined(gasLimit)) populated.gasLimit = gasLimit;
++
 +    const complete = await contract.signer.populateTransaction(populated);
-+    const { from: _from, ...unsigned } = complete;
++    let nonce: number | undefined;
++    if (isDefined(complete.nonce)) {
++      const resolvedNonce = BigNumber.from(complete.nonce);
++      assert(
++        resolvedNonce.lte(Number.MAX_SAFE_INTEGER.toString()),
++        "Across-Edge cannot serialize transaction: nonce exceeds JS safe integer range"
++      );
++      nonce = resolvedNonce.toNumber();
++    }
++
++    const unsigned: ethers.utils.UnsignedTransaction = {
++      to: complete.to,
++      nonce,
++      gasLimit: complete.gasLimit,
++      gasPrice: complete.gasPrice,
++      data: complete.data,
++      value: complete.value,
++      chainId: complete.chainId,
++      type: complete.type,
++      accessList: complete.accessList,
++      maxPriorityFeePerGas: complete.maxPriorityFeePerGas,
++      maxFeePerGas: complete.maxFeePerGas,
++    };
 +    return { serialized: ethers.utils.serializeTransaction(unsigned) };
 +  }
 +
@@ -75,6 +98,79 @@ diff --git a/src/clients/MultiCallerClient.ts b/src/clients/MultiCallerClient.ts
        mrkdwn: mrkdwn.join(""),
 +      acrossEdgeTraceIds: sdkUtils.dedupArray(transactions.flatMap((txn) => txn.acrossEdgeTraceIds ?? [])),
      } as AugmentedTransaction;
+
+diff --git a/src/clients/ProfitClient.ts b/src/clients/ProfitClient.ts
+--- a/src/clients/ProfitClient.ts
++++ b/src/clients/ProfitClient.ts
+@@ -720,34 +720,65 @@
+   async isFillProfitable(
+     deposit: Deposit,
+     lpFeePct: BigNumber,
+     repaymentChainId: number
+   ): Promise<
+-    Pick<FillProfit, "profitable" | "nativeGasCost" | "gasPrice" | "tokenGasCost" | "netRelayerFeePct" | "totalFeePct">
++    Pick<FillProfit, "profitable" | "nativeGasCost" | "gasPrice" | "tokenGasCost" | "netRelayerFeePct" | "totalFeePct"> &
++      Partial<
++        Pick<
++          FillProfit,
++          | "inputAmountUsd"
++          | "outputAmountUsd"
++          | "grossRelayerFeeUsd"
++          | "nativeTokenFillCostUsd"
++          | "netRelayerFeeUsd"
++        >
++      >
+   > {
+     let profitable = false;
+     let netRelayerFeePct = bnZero;
+     let nativeGasCost = uint256Max;
+     let tokenGasCost = uint256Max;
+     let gasPrice = uint256Max;
+     let totalFeePct = bnZero;
++    let inputAmountUsd: BigNumber | undefined;
++    let outputAmountUsd: BigNumber | undefined;
++    let grossRelayerFeeUsd: BigNumber | undefined;
++    let nativeTokenFillCostUsd: BigNumber | undefined;
++    let netRelayerFeeUsd: BigNumber | undefined;
+     try {
+-      ({ profitable, netRelayerFeePct, nativeGasCost, tokenGasCost, gasPrice, totalFeePct } =
+-        await this.getFillProfitability(deposit, lpFeePct, repaymentChainId));
++      ({
++        profitable,
++        netRelayerFeePct,
++        nativeGasCost,
++        tokenGasCost,
++        gasPrice,
++        totalFeePct,
++        inputAmountUsd,
++        outputAmountUsd,
++        grossRelayerFeeUsd,
++        nativeTokenFillCostUsd,
++        netRelayerFeeUsd,
++      } = await this.getFillProfitability(deposit, lpFeePct, repaymentChainId));
+     } catch (err) {
+       this.logger.debug({
+         at: "ProfitClient#isFillProfitable",
+         message: `Unable to determine fill profitability (${err}).`,
+         deposit: this.formatDepositForLog(deposit),
+         lpFeePct,
+       });
+     }
+ 
+     return {
+       profitable: profitable || (this.isTestnet && nativeGasCost.lt(uint256Max)),
+       nativeGasCost,
+       tokenGasCost,
+       gasPrice,
+       netRelayerFeePct,
+       totalFeePct,
++      inputAmountUsd,
++      outputAmountUsd,
++      grossRelayerFeeUsd,
++      nativeTokenFillCostUsd,
++      netRelayerFeeUsd,
+     };
+   }
 
 diff --git a/src/relayer/Relayer.ts b/src/relayer/Relayer.ts
 --- a/src/relayer/Relayer.ts
@@ -249,3 +345,149 @@ diff --git a/src/relayer/Relayer.ts b/src/relayer/Relayer.ts
 +        nativeTokenFillCostUsd: repaymentChainProfitabilities[preferredChainIndex].nativeTokenFillCostUsd,
 +        netRelayerFeeUsd: repaymentChainProfitabilities[preferredChainIndex].netRelayerFeeUsd,
        };
+
+diff --git a/test/TransactionClient.ts b/test/TransactionClient.ts
+--- a/test/TransactionClient.ts
++++ b/test/TransactionClient.ts
+@@ -10,1 +10,1 @@
+-import { createSpyLogger, Contract, expect, randomAddress, toBN, winston, ethers as testEthers } from "./utils";
++import { assertPromiseError, createSpyLogger, Contract, expect, randomAddress, sinon, toBN, winston, ethers as testEthers } from "./utils";
+@@ -125,5 +125,76 @@
+     expect(isDefined(gasLimit)).to.be.true;
+     expect((gasLimit as BigNumber).gt(0)).to.be.true;
+   });
+ 
++  it("Prepares deterministic unsigned transaction without signing or sending", async function () {
++    const chainId = Number(chainIds[0]);
++    const signerPopulate = sinon.stub().callsFake(async (request: ethers.providers.TransactionRequest) => ({
++      ...request,
++      nonce: BigNumber.from(7),
++      gasLimit: request.gasLimit ?? BigNumber.from(21_000),
++      gasPrice: BigNumber.from(2),
++      chainId,
++      type: 0,
++    }));
++    const signTransaction = sinon.stub().rejects(new Error("signing forbidden"));
++    const sendTransaction = sinon.stub().rejects(new Error("sending forbidden"));
++    const contract = {
++      address,
++      populateTransaction: {
++        [method]: sinon.stub().resolves({ to: address, data: "0x1234", value: BigNumber.from(0) }),
++      },
++      signer: {
++        populateTransaction: signerPopulate,
++        signTransaction,
++        sendTransaction,
++      },
++    } as unknown as Contract;
++    const txn: AugmentedTransaction = {
++      chainId,
++      contract,
++      method,
++      args: [],
++      gasLimit: BigNumber.from(25_000),
++    };
++
++    const first = await txnClient.prepare(txn);
++    const second = await txnClient.prepare(txn);
++    expect(first.serialized).to.equal(second.serialized);
++
++    const parsed = ethers.utils.parseTransaction(first.serialized);
++    expect(parsed.to).to.equal(address);
++    expect(parsed.nonce).to.equal(7);
++    expect(parsed.data).to.equal("0x1234");
++    expect(parsed.gasLimit.eq(25_000)).to.be.true;
++    expect(signTransaction.called).to.be.false;
++    expect(sendTransaction.called).to.be.false;
++  });
++
++  it("Fails closed when a populated nonce exceeds the JS safe integer range", async function () {
++    const chainId = Number(chainIds[0]);
++    const contract = {
++      address,
++      populateTransaction: {
++        [method]: sinon.stub().resolves({ to: address, data: "0x1234", value: BigNumber.from(0) }),
++      },
++      signer: {
++        populateTransaction: sinon.stub().resolves({
++          to: address,
++          nonce: BigNumber.from(Number.MAX_SAFE_INTEGER.toString()).add(1),
++          gasLimit: BigNumber.from(21_000),
++          gasPrice: BigNumber.from(2),
++          data: "0x1234",
++          value: BigNumber.from(0),
++          chainId,
++          type: 0,
++        }),
++      },
++    } as unknown as Contract;
++
++    await assertPromiseError(
++      txnClient.prepare({ chainId, contract, method, args: [] }),
++      "nonce exceeds JS safe integer range"
++    );
++  });
++
+   it("Transaction submission applies gasLimitMultiplier", async function () {
+
+diff --git a/test/ProfitClient.ConsiderProfitability.ts b/test/ProfitClient.ConsiderProfitability.ts
+--- a/test/ProfitClient.ConsiderProfitability.ts
++++ b/test/ProfitClient.ConsiderProfitability.ts
+@@ -33,6 +33,7 @@
+   expect,
+   hubPoolFixture,
+   randomAddress,
++  sinon,
+   winston,
+ } from "./utils";
+ 
+@@ -194,5 +194,49 @@
+     profitClient.setGasCosts(gasCost);
+     profitClient.setTokenPrices(tokenPrices);
+   });
+ 
++  it("Exposes observed profitability economics and leaves failed observations undefined", async () => {
++    const observed: FillProfit = {
++      inputTokenPriceUsd: toBNWei(1),
++      inputAmountUsd: toBNWei(101),
++      outputTokenPriceUsd: toBNWei(1),
++      outputAmountUsd: toBNWei(100),
++      grossRelayerFeePct: toBNWei("0.01"),
++      grossRelayerFeeUsd: toBNWei(1),
++      auxiliaryNativeTokenCost: bnZero,
++      auxiliaryNativeTokenCostUsd: bnZero,
++      nativeGasCost: toBN(21_000),
++      tokenGasCost: toBNWei("0.001"),
++      gasPrice: bnOne,
++      gasPadding: fixedPoint,
++      gasMultiplier: fixedPoint,
++      gasTokenPriceUsd: toBNWei(1),
++      gasCostUsd: toBNWei("0.001"),
++      nativeTokenFillCostUsd: toBNWei("0.001"),
++      netRelayerFeePct: toBNWei("0.009"),
++      netRelayerFeeUsd: toBNWei("0.999"),
++      totalFeePct: toBNWei("0.01"),
++      profitable: true,
++    };
++    const success = sinon.stub(profitClient, "getFillProfitability").resolves(observed);
++    const result = await profitClient.isFillProfitable(v3DepositTemplate, lpFeePct, destinationChainId);
++
++    expect(result.profitable).to.equal(observed.profitable);
++    expect(result.inputAmountUsd?.eq(observed.inputAmountUsd)).to.be.true;
++    expect(result.outputAmountUsd?.eq(observed.outputAmountUsd)).to.be.true;
++    expect(result.grossRelayerFeeUsd?.eq(observed.grossRelayerFeeUsd)).to.be.true;
++    expect(result.nativeTokenFillCostUsd?.eq(observed.nativeTokenFillCostUsd)).to.be.true;
++    expect(result.netRelayerFeeUsd?.eq(observed.netRelayerFeeUsd)).to.be.true;
++    success.restore();
++
++    const failure = sinon.stub(profitClient, "getFillProfitability").rejects(new Error("forced profitability failure"));
++    const missing = await profitClient.isFillProfitable(v3DepositTemplate, lpFeePct, destinationChainId);
++    expect(missing.inputAmountUsd).to.equal(undefined);
++    expect(missing.outputAmountUsd).to.equal(undefined);
++    expect(missing.grossRelayerFeeUsd).to.equal(undefined);
++    expect(missing.nativeTokenFillCostUsd).to.equal(undefined);
++    expect(missing.netRelayerFeeUsd).to.equal(undefined);
++    failure.restore();
++  });
++
+   // Verify gas cost calculation first, so we can leverage it in all subsequent tests.
