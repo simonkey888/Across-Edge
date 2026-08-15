@@ -1,0 +1,63 @@
+{
+  "order": "009",
+  "generated_at": "2026-08-15T02:32:52Z",
+  "base_sha": "59f5988163449ef5c0866c3a4b9cf52d45032a66",
+  "source_head_sha": "3c770f755e199e3e6650a942c1fa8ccb51b7afc9",
+  "main_sha": "044d195f134178b6127af5dd3f5ad7d660d32e54",
+  "pr": 2,
+  "branch": "order-001-shadow-relayer",
+  "pr_draft": true,
+  "merged": false,
+  "upstream_pin": "741ca9f7d72923f7b13c1c2462ca90eba81e1a87",
+  "patch_sha256": "489e4a8c019c49a826bd01f9ac45d56fb739fbe39650833f13bed57544b382f8",
+  "patch_git_blob_sha": "6a354b6bdc84eb52789322736635f9eb4d0aa470",
+  "gates": {
+    "full_pytest": "BLOCKED_REAL_NOT_EXECUTED",
+    "test_count": "UNKNOWN",
+    "compileall": "BLOCKED_REAL_NOT_EXECUTED",
+    "secret_scan": "BLOCKED_REAL_NOT_EXECUTED",
+    "safety_runtime": "BLOCKED_REAL_NOT_EXECUTED",
+    "patch_hunk_validation": "PASS_STATIC_EXACT_BYTES",
+    "patch_manifest_binding": "PASS_STATIC_EXACT_BYTES",
+    "git_apply_check": "BLOCKED_REAL_NOT_EXECUTED_POST_ORDER009",
+    "patch_apply": "BLOCKED_REAL_NOT_EXECUTED_POST_ORDER009",
+    "upstream_clean_typecheck_baseline": "BLOCKED_REAL_NOT_EXECUTED",
+    "upstream_patched_typecheck_fast": "BLOCKED_REAL_NOT_EXECUTED",
+    "upstream_patched_typecheck_standard": "BLOCKED_REAL_NOT_EXECUTED",
+    "upstream_patched_build": "BLOCKED_REAL_NOT_EXECUTED",
+    "relevant_upstream_tests": "BLOCKED_REAL_NOT_EXECUTED",
+    "read_only_network": "BLOCKED_REAL_PRE_NETWORK_GATES",
+    "real_shadow_smoke": "BLOCKED_REAL_PRE_NETWORK_GATES",
+    "restart_recovery": "NOT_REACHED",
+    "codex_security": "PASS_STATIC_BOUNDED"
+  },
+  "execution": {
+    "github_actions_run_id": 31859270326,
+    "github_actions_job_id": 94949586545,
+    "github_actions_runner_id": 0,
+    "github_actions_steps": 0,
+    "local_clone": "DNS_BLOCKED",
+    "codespaces_connector": "HTTP_403_RESOURCE_NOT_ACCESSIBLE_BY_INTEGRATION",
+    "codex_process_jobs": "UNAVAILABLE_ON_HOST",
+    "astral_codex_lanes": "UNAVAILABLE_ON_HOST"
+  },
+  "safety": {
+    "spend_usd": 0,
+    "private_keys": 0,
+    "signing": 0,
+    "transactions": 0,
+    "write_rpc": 0,
+    "onchain_value_transfer": 0,
+    "merge": false,
+    "main_unchanged": true,
+    "upstream_pin_unchanged": true
+  },
+  "status": "BLOCKED_REAL",
+  "known_unknowns": [
+    "final ORDER-009 full Python suite result",
+    "final patch git apply result on clean exact upstream",
+    "final patched upstream TypeScript compile/build/test result",
+    "fresh runtime secret and safety gate result",
+    "real read-only network and shadow result"
+  ]
+}

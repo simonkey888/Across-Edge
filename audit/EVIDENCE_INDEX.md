@@ -1,6 +1,6 @@
-# Evidence index — ORDER-001 → ORDER-008 lineage
+# Evidence index — ORDER-001 → ORDER-009 lineage
 
-Current ORDER-008 corrective source HEAD: `157a21f82c7172dea267b239a8accb7fd289ed06`.
+Current ORDER-009 source HEAD before evidence-only closure: `3c770f755e199e3e6650a942c1fa8ccb51b7afc9`.
 Current `main`: `044d195f134178b6127af5dd3f5ad7d660d32e54`.
 Approved upstream pin: `741ca9f7d72923f7b13c1c2462ca90eba81e1a87`.
 
@@ -35,14 +35,19 @@ Approved upstream pin: `741ca9f7d72923f7b13c1c2462ca90eba81e1a87`.
 | `evidence/ORDER007_FINAL/ORDER007_EXECUTION_STATUS.txt` | 007 | HISTORICAL_BLOCKED_VALID | ORDER-007 zero-cost execution-path status. |
 | `audit/ORDER007_CLOSURE.md` | 007 | HISTORICAL | ORDER-007 checkpoint. |
 | AUD Issue #7 comment `5288891689` | 008 | FRESH_CODESPACES_FAILURE_AT_D997 | Fresh Codespaces execution at `d997b13...`: compile/secret/safety passed; pytest exposed seven actionable failures; upstream runtime failed; network/shadow were not reached. |
-| corrective commits `d997b13...` → `157a21f...` | 008 | CURRENT_SOURCE | Minimal fixes for repeated T0 identity, run-local fills, reorg restoration, fixtures, patch structure/hash and global winner reconciliation. |
-| `patches/across-relayer-order003-instrumentation.patch` | 008 | CURRENT_STATIC | Corrected patch hunk structure for the unchanged upstream pin. |
-| `config/upstream-pin.json` | 008 | CURRENT_STATIC | Upstream SHA unchanged; instrumentation patch SHA-256 is `8cf71677303d75a178f5a9a79c0a3127935afcf753623668b55a5535fe25ce19`. |
-| `evidence/ORDER008_FINAL/ORDER008_CORRECTIVE_VERIFICATION.json` | 008 | CURRENT_BLOCKED_VALID | Source-bound post-correction status for `157a21f...`; explicitly no post-correction PASS claimed. |
-| `evidence/ORDER008_FINAL/ORDER008_EXECUTION_BLOCKER.txt` | 008 | CURRENT_BLOCKED_VALID | Codespaces create/start is unavailable through the connected integration; repository Codespaces API returns 403. Latest Actions run also fails before runner start. |
-| `audit/ORDER008_CORRECTIVE_CLOSURE.md` | 008 | CURRENT | Corrective checkpoint and exact remaining execution boundary. |
-| real-network ORDER-008 shadow records / winners / economics | 008 | NOT_AVAILABLE | Post-correction execution has not reached network/shadow gates. |
+| corrective commits `d997b13...` → `157a21f...` | 008 | HISTORICAL_SOURCE | Minimal fixes for repeated T0 identity, run-local fills, reorg restoration, fixtures, patch structure/hash and global winner reconciliation. |
+| AUD Issue #7 comment `5293672301` | 008 | FRESH_REMOTE_EXECUTION_R2 | Fresh controlled Linux execution: the seven prior failures passed (24 tests); then canonical patch manifest/apply failures were isolated. |
+| commits through `59f5988163449ef5c0866c3a4b9cf52d45032a66` | 008 | HISTORICAL_SOURCE | Minimal canonical patch context/header repair and exact SHA binding requested by AUD. |
+| `evidence/ORDER008_FINAL/**` | 008 | HISTORICAL_BLOCKED_VALID | Preserved ORDER-008 corrective evidence; no later PASS inferred. |
+| `audit/ORDER008_CORRECTIVE_CLOSURE.md` | 008 | HISTORICAL | Preserved ORDER-008 checkpoint. |
+| `audit/ORDER009_BASELINE.md` | 009 | CURRENT_SOURCE_BOUND | Exact pre-edit ORDER-009 reconstruction and authority baseline. |
+| source commits `59f5988...` → `3c770f7...` | 009 | CURRENT_SOURCE | Fixes ethers-v5 unsigned transaction typing/nonce handling, canonical observed profitability economics exposure, regression tests, final patch hash and exact-head E2E harness. |
+| `patches/across-relayer-order003-instrumentation.patch` + `config/upstream-pin.json` | 009 | CURRENT_STATIC | Patch blob `6a354b6...`, 20080 bytes, SHA-256 `489e4a8c019c49a826bd01f9ac45d56fb739fbe39650833f13bed57544b382f8`; upstream pin unchanged. |
+| `.github/workflows/order009-execution.yml` / run `31859270326` | 009 | CURRENT_BLOCKED_REAL | Exact source-head workflow; GitHub refused runner allocation for account billing/spending policy, `runner_id=0`, `steps=[]`. |
+| `evidence/ORDER009_FINAL/**` | 009 | CURRENT_BLOCKED_REAL | Source-bound identity, static patch binding, execution-surface exhaustion and bounded Codex Security gate. |
+| `audit/ORDER009_CLOSURE.md` | 009 | CURRENT | Final ORDER-009 blocked-real checkpoint. |
+| real-network ORDER-009 shadow records / winners / economics | 009 | NOT_AVAILABLE | Pre-network executable gates could not run on an available zero-cost runtime. |
 
 ## Policy
 
-`CURRENT` / `CURRENT_BLOCKED_VALID` means the artifact belongs to the active ORDER-008 lineage and does not upgrade blocked execution into PASS. `CURRENT_SOURCE` identifies the exact corrected code lineage. `STATIC` means source/patch inspection only. `HISTORICAL` preserves prior evidence and is never reused as current execution evidence. `SYNTHETIC` never supports competitiveness or economics. Historical evidence is retained and never rewritten into a false current PASS.
+`CURRENT` / `CURRENT_BLOCKED_REAL` means the artifact belongs to ORDER-009 and does not upgrade blocked execution into PASS. `CURRENT_SOURCE` identifies the exact corrected code lineage. `STATIC` means source/patch inspection only. `HISTORICAL` preserves prior evidence and is never reused as current execution evidence. `SYNTHETIC` never supports competitiveness or economics. Historical evidence is retained and never rewritten into a false current PASS.
