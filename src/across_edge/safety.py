@@ -21,7 +21,7 @@ def sanitize_text(value:object)->str:
  text=str(value);text=re.sub(r'https?://[^\s]+',lambda m:sanitize_endpoint(m.group(0)),text);return _SECRET_RE.sub(lambda m:(m.group(1) or m.group(4) or '')+'<REDACTED>',text)
 def validate_shadow_environment(env:Mapping[str,str]|None=None,argv:Sequence[str]=())->SafetyState:
  env=dict(os.environ if env is None else env);secrets=tuple(sorted(k for k in PROHIBITED_SECRET_KEYS if env.get(k)))
- if secrets:raise SafetyViolation('ORDER-004 forbids real secret material: '+', '.join(secrets))
+ if secrets:raise SafetyViolation('ORDER-010 forbids real secret material: '+', '.join(secrets))
  enabled=tuple(sorted(k for k in PROHIBITED_TRUE_FLAGS if _truthy(env.get(k))))
  if enabled:raise SafetyViolation('LIVE_EXECUTION_PROHIBITED: '+', '.join(enabled))
  args=list(argv);wallet='void'
@@ -29,7 +29,7 @@ def validate_shadow_environment(env:Mapping[str,str]|None=None,argv:Sequence[str
   i=args.index('--wallet')
   if i+1>=len(args):raise SafetyViolation('--wallet requires a value')
   wallet=args[i+1]
- if wallet!='void':raise SafetyViolation('ORDER-004 requires upstream --wallet void')
+ if wallet!='void':raise SafetyViolation('ORDER-010 requires upstream --wallet void')
  return SafetyState(False,False,wallet,secrets)
 def assert_read_only_rpc_method(method:str)->None:
  if method in LIVE_RPC_METHODS or method.startswith('eth_send') or method.startswith('personal_') or method.startswith('wallet_'):raise SafetyViolation(f'LIVE_EXECUTION_PROHIBITED: RPC method {method}')
@@ -38,7 +38,7 @@ def audit_upstream_dotenv(relayer_dir:str|Path)->dict:
  root=Path(relayer_dir);blocked=[]
  for p in root.rglob('.env*'):
   if not p.is_file() or any(part in {'.git','node_modules'} for part in p.parts):continue
-  if p.name=='.env.example':continue
+  if p.name in {'.env.example','.env.sample','.env.template'}:continue
   blocked.append(str(p.relative_to(root)))
  if blocked:raise SafetyViolation('loadable dotenv/config source present; launch blocked: '+','.join(sorted(blocked)))
  return {'status':'PASS','loadable_dotenv_files':[]}

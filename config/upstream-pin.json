@@ -1,11 +1,19 @@
 {
-  "repository": "https://github.com/across-protocol/relayer",
-  "sha": "741ca9f7d72923f7b13c1c2462ca90eba81e1a87",
+  "instrumentation_patch": "patches/across-relayer-order003-instrumentation.patch",
+  "instrumentation_patch_sha256": "33f1b17aaf67ab602c62a4e1a3801f61498a0be0453203dd4e5c8db2487ffd1a",
   "license": "AGPL-3.0-only",
   "node": ">=22.18.0",
-  "instrumentation_patch": "patches/across-relayer-order003-instrumentation.patch",
-  "instrumentation_patch_sha256": "7dededeb875ddb1a055d45aba64a7c7809d28ad5b17bb2d534c61546509a7aa3",
-  "safe_cli": ["yarn", "relay", "--wallet", "void"],
+  "repository": "https://github.com/across-protocol/relayer",
+  "safe_cli": [
+    "node",
+    "./dist/index.js",
+    "--relayer",
+    "--wallet",
+    "void"
+  ],
   "send_relays": false,
-  "send_transactions": false
+  "send_transactions": false,
+  "sha": "741ca9f7d72923f7b13c1c2462ca90eba81e1a87",
+  "upstream_test_patch": "patches/across-relayer-order010-regression-tests.patch",
+  "upstream_test_patch_sha256": "fef471a7a967b363114edacc07e76e4088996415f854a2a21ba19f51d4038e40"
 }

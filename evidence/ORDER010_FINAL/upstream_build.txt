@@ -1,0 +1,5 @@
+TSGO_EMITTED_FILES=616
+UPSTREAM_HEAD=741ca9f7d72923f7b13c1c2462ca90eba81e1a87
+COMMAND=NODE_OPTIONS=--max-old-space-size=1400 ./node_modules/.bin/tsgo --build
+EXIT_CODE=0
+RESULT=PASS

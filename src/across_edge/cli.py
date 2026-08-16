@@ -6,7 +6,7 @@ from .runmeta import RunMetadata,git_head
 from .safety import validate_shadow_environment,sanitize_text
 from .storage import Store
 from .upstream import PINNED_SHA,verify_upstream_checkout
-BANNER='ACROSS-EDGE ORDER-003 — SHADOW ONLY — LIVE FINANCIAL EXECUTION PROHIBITED'
+BANNER='ACROSS-EDGE ORDER-010 — SHADOW ONLY — LIVE FINANCIAL EXECUTION PROHIBITED'
 OFFICIAL_CHAINS={'arbitrum':ChainSpec(42161,'Arbitrum One','https://arb1.arbitrum.io/rpc','0xe35e9842fceaCA96570B734083f4a58e8F7C5f2A'),'base':ChainSpec(8453,'Base','https://mainnet.base.org','0x09aea4b2242abC8bb4BB78D537A67a245A7bEC64')}
 def _observe(args):
     validate_shadow_environment(os.environ,['--wallet','void']);store=Store(args.db);specs=[OFFICIAL_CHAINS[x] for x in args.chains.split(',')];meta=RunMetadata(args.run_id,our_sha=git_head('.'),upstream_sha=PINNED_SHA,config={'chains':args.chains,'backfill':args.backfill},routes=['42161<->8453'],endpoints=[s.rpc_url for s in specs]);store.set_run_metadata(args.run_id,meta.payload);results=[]

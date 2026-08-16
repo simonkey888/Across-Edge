@@ -39,6 +39,7 @@ class RpcObserver:
         else:self.store.set_cursor('spokepool',self.spec.chain_id,head+1,head,head_hash,run_id=self.run_id)
         self.store.bump_counter(self.run_id,'logs_seen',len(logs));self.store.bump_counter(self.run_id,'logs_accepted',accepted);gaps=self.store.unresolved_decode_gaps(self.run_id)
         return {'head':head,'from_block':start,'to_block':head,'logs':len(logs),'accepted':accepted,'errors':errors,'reorg':reorg,'cursor_next_block':self.store.get_cursor('spokepool',self.spec.chain_id,self.run_id)['next_block'],'unresolved_decode_gaps':len(gaps)}
+    def close(self):self.store.close()
     def run_continuous(self,stop_event,*,interval_s=2.0,max_backoff_s=30.0,on_cycle=None):
         failures=0;cycles=0
         while not stop_event.is_set():

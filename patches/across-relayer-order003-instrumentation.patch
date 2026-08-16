@@ -1,510 +1,156 @@
-diff --git a/src/clients/TransactionClient.ts b/src/clients/TransactionClient.ts
---- a/src/clients/TransactionClient.ts
-+++ b/src/clients/TransactionClient.ts
-@@ -80,4 +80,6 @@
-   // If true, the contract's provider will be replaced with the TransactionClient's SpeedProvider for
-   // this chain (if configured), enabling parallel multi-RPC dispatch for faster submission.
-   spray?: boolean;
-+  // Across-Edge ORDER-003 read-only instrumentation. Trace IDs never contain credentials.
-+  acrossEdgeTraceIds?: string[];
- }
-@@ -121,5 +121,41 @@
-   simulate(txns: AugmentedTransaction[]): Promise<TransactionSimulationResult[]> {
-     return Promise.all(txns.map((txn: AugmentedTransaction) => this._simulate(txn)));
-   }
- 
-+  /** Populate and serialize an unsigned transaction without signing or submitting it. */
-+  async prepare(txn: AugmentedTransaction): Promise<{ serialized: string }> {
-+    const { contract, method, args, value = bnZero, gasLimit } = txn;
-+    const populated: ethers.providers.TransactionRequest =
-+      method === ""
-+        ? { to: contract.address, data: args[0] as ethers.utils.BytesLike, value }
-+        : await contract.populateTransaction[method](...args, { value });
-+    if (isDefined(gasLimit)) populated.gasLimit = gasLimit;
-+
-+    const complete = await contract.signer.populateTransaction(populated);
-+    let nonce: number | undefined;
-+    if (isDefined(complete.nonce)) {
-+      const resolvedNonce = BigNumber.from(complete.nonce);
-+      assert(
-+        resolvedNonce.lte(Number.MAX_SAFE_INTEGER.toString()),
-+        "Across-Edge cannot serialize transaction: nonce exceeds JS safe integer range"
-+      );
-+      nonce = resolvedNonce.toNumber();
-+    }
-+
-+    const unsigned: ethers.utils.UnsignedTransaction = {
-+      to: complete.to,
-+      nonce,
-+      gasLimit: complete.gasLimit,
-+      gasPrice: complete.gasPrice,
-+      data: complete.data,
-+      value: complete.value,
-+      chainId: complete.chainId,
-+      type: complete.type,
-+      accessList: complete.accessList,
-+      maxPriorityFeePerGas: complete.maxPriorityFeePerGas,
-+      maxFeePerGas: complete.maxFeePerGas,
-+    };
-+    return { serialized: ethers.utils.serializeTransaction(unsigned) };
-+  }
-+
-   async dispatch(
+diff --git a/src/adapter/l2Bridges/BinanceCEXBridge.ts b/src/adapter/l2Bridges/BinanceCEXBridge.ts
+index e5358ccef5dc55f64df5ff1124c1cec584dea888..490435e87bc47da01e8d14a1853e6e86d16575bb 100644
+GIT binary patch
+delta 26
+icmX@9_eEzz9`j}<mSUF8=QzB0Cr{%r*=!;v$_N07tO&sX
+
+delta 237
+zcmaLQF$%&k6vlC+f*`mE-5lO5(oRmrL7WA_14x=YY%so8lC-6hhwvgoPvIpzg$FRT
+zqu}-pKmOl)^-LZV-O?0}o-Kke5K7Be?ZRfr5wI4f5*`&a1riXV3fpm@!b5`~1%YI8
+z-d56o1G&}ejNn?5g=ON(nKqe1ANDBwltrPKObfXtL2{1UQtymL@`vF(>n>3}1_(Xv
+Zl0p3-*xZ-#dX#mq$$qx@C%aP|k3N3&RvG{R
+
 diff --git a/src/clients/MultiCallerClient.ts b/src/clients/MultiCallerClient.ts
---- a/src/clients/MultiCallerClient.ts
-+++ b/src/clients/MultiCallerClient.ts
-@@ -20,3 +20,10 @@
- import lodash from "lodash";
- 
-+function emitAcrossEdge(stage: "T2" | "T3", payload: Record<string, unknown>): void {
-+  if (process.env.ACROSS_EDGE_INSTRUMENTATION !== "true") return;
-+  process.stdout.write(
-+    `ACROSS_EDGE_EVENT ${JSON.stringify({ version: 3, stage, source_monotonic_ns: process.hrtime.bigint().toString(), wall_utc: new Date().toISOString(), ...payload })}\n`
-+  );
-+}
-+
- // @todo: MultiCallerClient should be generic. For future, permit the class instantiator to supply their own
-@@ -220,5 +227,23 @@
-       txnRequestsToSubmit.push(..._valueTxns.concat(await this.buildMultiCallBundles(_txns, this.chunkSize[chainId])));
-     }
- 
-+    const allTraceIds = sdkUtils.dedupArray(batchTxns.flatMap((txn) => txn.acrossEdgeTraceIds ?? []));
-+    const successfulTraceIds = new Set(txnRequestsToSubmit.flatMap((txn) => txn.acrossEdgeTraceIds ?? []));
-+    allTraceIds.forEach((trace_id) =>
-+      emitAcrossEdge("T2", { trace_id, simulation_result: successfulTraceIds.has(trace_id) ? "success" : "failed" })
-+    );
-+
-     if (simulate) {
-+      for (const txn of txnRequestsToSubmit) {
-+        try {
-+          const prepared = await this.txnClient.prepare(txn);
-+          (txn.acrossEdgeTraceIds ?? []).forEach((trace_id) =>
-+            emitAcrossEdge("T3", { trace_id, transaction_ready: true, transaction_serialized: prepared.serialized })
-+          );
-+        } catch {
-+          (txn.acrossEdgeTraceIds ?? []).forEach((trace_id) =>
-+            emitAcrossEdge("T3", { trace_id, transaction_ready: false, rejection_reason: "prepare_failed" })
-+          );
-+        }
-+      }
-       let mrkdwn = "";
-@@ -320,3 +345,4 @@
-       message: "Across multicall transaction",
-       mrkdwn: mrkdwn.join(""),
-+      acrossEdgeTraceIds: sdkUtils.dedupArray(transactions.flatMap((txn) => txn.acrossEdgeTraceIds ?? [])),
-     } as AugmentedTransaction;
-@@ -365,3 +391,4 @@
-       message: "Across multicall transaction",
-       mrkdwn: mrkdwn.join(""),
-+      acrossEdgeTraceIds: sdkUtils.dedupArray(transactions.flatMap((txn) => txn.acrossEdgeTraceIds ?? [])),
-     } as AugmentedTransaction;
+index 1129b803bfe897e138e8183d8fc099e8e9e79370..4132a95bc377b07c1c81b2bf0f4cc7e6c1a41417 100644
+GIT binary patch
+delta 1426
+zcmchWzi-n(6vveTRFwq;f`#GLLc&(96QYH|Z5jm{L6DkAwaWs?z1rvGsB;(HotuV`
+z=8y1>;6FghKfuV!#KOo>v9mC7c7D{9f&@dS)BSqy`~AH4zJDowI4-^aRvJYK3l!xH
+zNQbIwAh?vZutiL%aEmx#cy|qWt(O(UhA!^M9ET2UlYonGT`ECY%Z7yQGu~qxmIDWz
+zhA>zJpb?l|!2=>CBJ2QFA8t2Y*RO3ps`>SX>uv9B)f!%P<kg!ESSpvnP$D6Q1%jwV
+zur(cG_FbxwCkpihRm9Zi0K3I#wWm4|+!{P_n+-IPM5DerfCD0=cILo}4Y?h?@I(Z}
+z?{LNyXEg9bCY^brwotS~&>n43rc4Vd?&c0n%Z46~V?R-W1B~=w6Kg5igSy*1d4mv|
+zB7&hce9m^YSZi%@I6f{_Zl{gqiz6Mx6F4CCP(m4GxWA)lEKx|pq+1mN_su=5g0^?a
+zB#L6Jws6-p)giN>ya9SecwV7-oJs|ry|8qij7-3pR3MWe10N;DY+CmPaEUV0cS~1C
+z{};ZXA4Oc$aM0HJGDkiQGm*InINeNH7uhg?*-INdNjr%)sO#ekB9mA-XQ)PPEDPZ)
+zU`(AEpj$J-G$x^;S?5`;wRFk4c}2?tbAmww10JQH_OIDi-jo?3&?@?c-HcgRkS-P^
+zgmU_J`TA(O&EZebPCjP`f3Ct`p-cjtnzPAd713x&Og_N*RBARj>^oX=LhKA5lhX@H
+z1jR9ZMf5n%q@$BV4JB=C-WWlU_0unQ&&ffq^Ilfn+(Cq6sVxZdlFXgSY&eandjF)H
+znev5cCk@B<t>z^H@O$U$jyYq13XuMFhQ>#$Ul-0NReH2)r629f>5s>Y<2U8ccYXrv
+C{M=Ch
+
+delta 45
+zcmV+|0Mh@!=mGWI0kG-;vrYp&CzAmz7L$f?*^^E*60;jGT?(`0Io$}8<T)a<PebuA
+D#Bvib
 
 diff --git a/src/clients/ProfitClient.ts b/src/clients/ProfitClient.ts
---- a/src/clients/ProfitClient.ts
-+++ b/src/clients/ProfitClient.ts
-@@ -720,34 +720,65 @@
-   async isFillProfitable(
-     deposit: Deposit,
-     lpFeePct: BigNumber,
-     repaymentChainId: number
-   ): Promise<
--    Pick<FillProfit, "profitable" | "nativeGasCost" | "gasPrice" | "tokenGasCost" | "netRelayerFeePct" | "totalFeePct">
-+    Pick<FillProfit, "profitable" | "nativeGasCost" | "gasPrice" | "tokenGasCost" | "netRelayerFeePct" | "totalFeePct"> &
-+      Partial<
-+        Pick<
-+          FillProfit,
-+          | "inputAmountUsd"
-+          | "outputAmountUsd"
-+          | "grossRelayerFeeUsd"
-+          | "nativeTokenFillCostUsd"
-+          | "netRelayerFeeUsd"
-+        >
-+      >
-   > {
-     let profitable = false;
-     let netRelayerFeePct = bnZero;
-     let nativeGasCost = uint256Max;
-     let tokenGasCost = uint256Max;
-     let gasPrice = uint256Max;
-     let totalFeePct = bnZero;
-+    let inputAmountUsd: BigNumber | undefined;
-+    let outputAmountUsd: BigNumber | undefined;
-+    let grossRelayerFeeUsd: BigNumber | undefined;
-+    let nativeTokenFillCostUsd: BigNumber | undefined;
-+    let netRelayerFeeUsd: BigNumber | undefined;
-     try {
--      ({ profitable, netRelayerFeePct, nativeGasCost, tokenGasCost, gasPrice, totalFeePct } =
--        await this.getFillProfitability(deposit, lpFeePct, repaymentChainId));
-+      ({
-+        profitable,
-+        netRelayerFeePct,
-+        nativeGasCost,
-+        tokenGasCost,
-+        gasPrice,
-+        totalFeePct,
-+        inputAmountUsd,
-+        outputAmountUsd,
-+        grossRelayerFeeUsd,
-+        nativeTokenFillCostUsd,
-+        netRelayerFeeUsd,
-+      } = await this.getFillProfitability(deposit, lpFeePct, repaymentChainId));
-     } catch (err) {
-       this.logger.debug({
-         at: "ProfitClient#isFillProfitable",
-         message: `Unable to determine fill profitability (${err}).`,
-         deposit: this.formatDepositForLog(deposit),
-         lpFeePct,
-       });
-     }
- 
-     return {
-       profitable: profitable || (this.isTestnet && nativeGasCost.lt(uint256Max)),
-       nativeGasCost,
-       tokenGasCost,
-       gasPrice,
-       netRelayerFeePct,
-       totalFeePct,
-+      inputAmountUsd,
-+      outputAmountUsd,
-+      grossRelayerFeeUsd,
-+      nativeTokenFillCostUsd,
-+      netRelayerFeeUsd,
-     };
-   }
+index 9492648a568336ae9999040e236878c0520954db..4a8ac3bc5dcbe5923b7a7cf2e1c850fafa894084 100644
+GIT binary patch
+delta 425
+zcmZ2=n`z%erVTt5^$KcS3SbbBSX7dkm}3LwDkubGCTAmf3JPwSIXMAE`DvLYI&d`#
+z3N;E!nRx}JC62lIrFkWx#VJatlKG`2cx2PXi}H($gHm%6D^rWyQd8mjCp%cFYC{|b
+zv>`9G1dAGwv>nv8$=ns^g>q6$6i^*ASteIj7$l7543Ic8P<*l@humcKTp=)fBDWHV
+zJ=wTIkQwL@kebOW^?5`!s^MNL0Q)~NDJONZK$-Yt{c7&XVkP{O_eXO~J{m1H*(qFT
+z@{uUf$seO6CM!itPPQl(WCxlA3a`lxu1b@|%0#$ffmf?wyV<ppjR~k&Zn9Ri0t-mt
+U<d5OXlY3+MLH2KUtxh!p0Ko2ka{vGU
+
+delta 151
+zcmdn@kZILzrVTt5lRsCSt1l_4RH)`s00WI`g@U5|w9Jykq?}Y8g}l^~pwyhi%G4sa
+z)YO3F5}-(8NoHB9dt$M3eld_+lAoQL2j`_H76%k%CIdB=<d-DoK=dfoD%e6zS5QbS
+gPs}V)D9Oky)=N(<am&of3E2Fh`V-^k__}x_0I^&*CjbBd
+
+diff --git a/src/clients/TransactionClient.ts b/src/clients/TransactionClient.ts
+index 6ab2dc3124aa14e18dd00ce59a3665a6e9393452..9cb072207e7d972749eb62fe198c735c2462ccfa 100644
+GIT binary patch
+delta 1792
+zcma)7&1w`u5XOU-B@jeW(MuUbX2WI@6+t#GAz?Qm5@UW;f<d%1Q@d&0?H;>(^5bS1
+z-(jzUuOQ@2JbDn!lUO}7Ju?X^xlPy4*I!kA)pPda%D1yC-=9n*0JF2O7$~XrOegFi
+zyxeMcwr1w$9)m&_&PdTe1}?Nw@c@NkhD+hYE5!nY)wTwK2dE&B<l+JXg&{?8*4KUw
+zfTg$=HceO!^+FQ}ii_UvyZPFvRy%z<F?qE+J3S2>GK%}mATSYvMnxF>vpqp9H17!v
+z!6+s)3oHdV<Yr&S2CR$VKq}Dj-hdlpPu%!0J!={0V-Y~4Fk))_W%9wzVTm0&E-)JZ
+zygrja3--iYRI&j*rq?)u!HA6JNX!!y*ebPwC?`tkX!cQQKT`65hxUugbPTufQ;Zbe
+zN>c#_6f8q%wOTMWmD>OoU<gJwEp(g83yjagP@&ch2$^9`V5+Bg=iX5v?zY%)>h999
+zLE`uk8*sq-F~TUt96x)rylJ`eE_htGvCFA*o~x%`FX{WvNF}<@`C6sWKn|il(nMP0
+zU$1YCH{V>p;}yl%vzCw_gcJdezuvx+oWIoN`)L4OJ<Q9_`bbsE{sD&THk~*u@!ono
+z*hA%al^l2%va{>#KuH_MD;iiuNzm^b^m3FJi#zYP7neKlSJz*4Ryte0k=v>Cyn4M+
+z<WE(#A21;#X{u0PMRConPQar8G1TyU8#L=8?S{b~tpH6v>7ko!-X6%4TC_}+YKcll
+z(#zv$6H0+Oy%+k*CjL5KgNnweYp$nOL`l&zBVC1Q@7=+T+3GEuZ6N{|lBuq6+oN-(
+zI;*6nXXgy|8BfG2Ek%)QO=NKq<~YKN*B&$1D4VSn&%IKz1&j@>!^uerY%S>`&6S$6
+zO-t-6VJq5DJe5>|;cVGWBf!3<$<c*HM1lG6Jmw`K!M;*S`b_yO2xx)VxLy8|bZNZ=
+ziAR4SQ3Cu6cG7AnWs(sY{|;_URD-P{$*!-24cO5#;s&Y}dSoh$tM+r8hxzuHeI*a+
+z4{!(_rKIvc{CAhAL2(qxM41audD{B>!*in;eJD1=mZZ?cO3+(btY-Q8X4_FXD(m4{
+TQP=_2A=OyAWv46G?(X~n2cb?7
+
+delta 19
+bcmbRLi1E=S#to)Cn>X?Zv2JFOl#T!ZRNMyh
+
+diff --git a/src/rebalancer/RebalancerClientHelper.ts b/src/rebalancer/RebalancerClientHelper.ts
+index 50ced79c48b3b774c555ff28a8a01545bbcc56f7..47dc993e361f2ec54c97b361ed98bb5d4ab3fc7d 100644
+GIT binary patch
+delta 515
+zcmbu4y-EW?9K=yfjK+`NYEtQ;Nwl!>1CfB8L^NQ%+5P8k;j(+){?8bK*xSiHgT0W>
+z%17`Cd=d-yk_e)uTkQ@r^V@k1p0{7FOZmsbS_Q}GiP+Kjx^yu2&}`z8gsNK;51Y4E
+ztNK91F)>^ulpUaN6(J=S+BhUxH`Wr?)Mexav|62uX8WvzgpATAtUDH5*oAWFW{iI3
+z7{>B4;6c(F$7v=RLWzVabqF~U3`MEFCCtb&B}Im{|0HY*k#ST!rLR_?JC8OYK~Fra
+z$u)fYr24z|TqFlLog)0*4<6;!%H}?xd)TUJS1c|D2N?M*e&ia_FrhToH<?yGXK3*B
+zR?FYZ<rN^dVMytYPvptsMjPk~M^`#DQ?V$Ll9L&@@D<1Qc&1E*;P5xGtBo*{@{`5j
+Y59H_{ko)mo<#Rq?U0EORRv(wX03y<+;Q#;t
+
+delta 303
+zcmZ3gy-RaLIP2zIRx3ui<ovwi5`~P)g4Cj%%)-*l6vvdrf|ArC1zUx@)bfc36nQkb
+z6o4QnKRrFQXtDvHjC)dIacXd8dR}Ug4p=HVxugK93nGx8Rs!V%<u$E=1jLr4%)G?B
+z<W#8K<W>$%HiWVDWE-0Zaj|b=0npLa$bPXx=D?h&0Ck2Hi~*5gD$<$U%dWmzkn=aw
+S<ToPRlh^QYZr0(c<OBd>(PZ%e
 
 diff --git a/src/relayer/Relayer.ts b/src/relayer/Relayer.ts
---- a/src/relayer/Relayer.ts
-+++ b/src/relayer/Relayer.ts
-@@ -50,10 +50,25 @@
- type RepaymentChainProfitability = {
-   gasLimit: BigNumber;
-   gasCost: BigNumber;
-   gasPrice: BigNumber;
-   relayerFeePct: BigNumber;
-   totalUserFeePct: BigNumber;
-   lpFeePct: BigNumber;
-+  inputAmountUsd?: BigNumber;
-+  outputAmountUsd?: BigNumber;
-+  grossRelayerFeeUsd?: BigNumber;
-+  nativeTokenFillCostUsd?: BigNumber;
-+  netRelayerFeeUsd?: BigNumber;
- };
- 
-+function acrossEdgeTraceId(deposit: Deposit): string {
-+  return `${deposit.originChainId}:${deposit.depositId.toString()}:${deposit.destinationChainId}`;
-+}
-+function emitAcrossEdge(stage: "T0" | "TA" | "T1", payload: Record<string, unknown>): void {
-+  if (process.env.ACROSS_EDGE_INSTRUMENTATION !== "true") return;
-+  process.stdout.write(
-+    `ACROSS_EDGE_EVENT ${JSON.stringify({ version: 3, stage, source_monotonic_ns: process.hrtime.bigint().toString(), wall_utc: new Date().toISOString(), ...payload })}\n`
-+  );
-+}
-+
- export class Relayer {
-@@ -805,5 +820,25 @@
-     const { profitClient, spokePoolClients, tokenClient } = this.clients;
-     const { slowDepositors } = this.config;
-     const [originChain, destChain] = [getNetworkName(originChainId), getNetworkName(destinationChainId)];
-+    const acrossEdgeTrace = acrossEdgeTraceId(deposit);
-+    const acrossEdgeLiveActionable = deposit.blockNumber <= maxBlockNumber;
-+    emitAcrossEdge("T0", {
-+      trace_id: acrossEdgeTrace,
-+      deposit_key: `${originChainId}:${depositId.toString()}`,
-+      origin_chain_id: originChainId,
-+      destination_chain_id: destinationChainId,
-+      deposit_id: depositId.toString(),
-+      input_token: deposit.inputToken.toNative(),
-+      output_token: deposit.outputToken.toNative(),
-+      input_amount: deposit.inputAmount.toString(),
-+      output_amount: deposit.outputAmount.toString(),
-+      exclusive_relayer: deposit.exclusiveRelayer.toBytes32(),
-+      exclusivity_deadline: deposit.exclusivityDeadline,
-+      decision_destination_time: spokePoolClients[destinationChainId].getCurrentTime(),
-+      deposit_block: deposit.blockNumber,
-+      max_block_number: maxBlockNumber,
-+      live_equivalent_confirmations_satisfied: acrossEdgeLiveActionable,
-+      simulation_early_not_live_actionable: !acrossEdgeLiveActionable,
-+    });
- 
-     if (isDefined(this.pendingTxnHashes[destinationChainId])) {
-@@ -831,5 +866,15 @@
-         return;
-       }
-     }
-+
-+    if (acrossEdgeLiveActionable) {
-+      emitAcrossEdge("TA", {
-+        trace_id: acrossEdgeTrace,
-+        max_block_number: maxBlockNumber,
-+        live_equivalent_confirmations_satisfied: true,
-+        simulation_early_not_live_actionable: false,
-+        first_actionable_destination_time: spokePoolClients[destinationChainId].getCurrentTime(),
-+      });
-+    }
- 
-     // If depositor is on the slow deposit list, then send a zero fill to initiate a slow relay and return early.
-@@ -862,6 +905,11 @@
-         lpFeePct: realizedLpFeePct,
-         totalUserFeePct,
-         gasPrice,
-+        inputAmountUsd,
-+        outputAmountUsd,
-+        grossRelayerFeeUsd,
-+        nativeTokenFillCostUsd,
-+        netRelayerFeeUsd,
-       },
-     } = await this.resolveRepaymentChain(deposit, lpFees);
- 
-@@ -880,2 +928,5 @@
-     if (!isProfitable) {
-+      if (acrossEdgeLiveActionable) {
-+        emitAcrossEdge("T1", { trace_id: acrossEdgeTrace, eligible: false, profitability_decision: "unprofitable", rejection_reason: "no_profitable_repayment_chain" });
-+      }
-       profitClient.captureUnprofitableFill(deposit, realizedLpFeePct, relayerFeePct, gasCost);
-@@ -895,2 +946,5 @@
-     if (!hasBalance) {
-+      if (acrossEdgeLiveActionable) {
-+        emitAcrossEdge("T1", { trace_id: acrossEdgeTrace, eligible: false, profitability_decision: "profitable", rejection_reason: "insufficient_balance" });
-+      }
-       // The relayer has insufficient balance for a profitable fill; log it for rebalancing and request a slow fill.
-@@ -915,2 +969,5 @@
-     if (this.originChainOvercommitted(originChainId, fillAmountUsd, limitIdx)) {
-+      if (acrossEdgeLiveActionable) {
-+        emitAcrossEdge("T1", { trace_id: acrossEdgeTrace, eligible: false, profitability_decision: "profitable", rejection_reason: "origin_chain_overcommitment" });
-+      }
-       const limits = this.fillLimits[originChainId].slice(limitIdx);
-@@ -930,3 +987,19 @@
-     const gasLimit = isMessageEmpty(resolveDepositMessage(deposit)) ? undefined : _gasLimit;
-+    if (acrossEdgeLiveActionable) {
-+      emitAcrossEdge("T1", {
-+        trace_id: acrossEdgeTrace,
-+        eligible: true,
-+        profitability_decision: "profitable",
-+        economics: {
-+          repayment_chain_id: repaymentChainId,
-+          lp_fee_pct_wei: realizedLpFeePct.toString(),
-+          input_amount_usd_wei: inputAmountUsd?.toString() ?? "UNKNOWN",
-+          output_amount_usd_wei: outputAmountUsd?.toString() ?? "UNKNOWN",
-+          gross_relayer_fee_usd_wei: grossRelayerFeeUsd?.toString() ?? "UNKNOWN",
-+          native_token_fill_cost_usd_wei: nativeTokenFillCostUsd?.toString() ?? "UNKNOWN",
-+          net_relayer_fee_usd_wei: netRelayerFeeUsd?.toString() ?? "UNKNOWN",
-+        },
-+      });
-+    }
--    this.fillRelay(deposit, repaymentChainId, realizedLpFeePct, totalUserFeePct, gasPrice, gasLimit);
-+    this.fillRelay(deposit, repaymentChainId, realizedLpFeePct, totalUserFeePct, gasPrice, gasLimit, acrossEdgeLiveActionable ? acrossEdgeTrace : undefined);
-   }
-@@ -1220,4 +1295,5 @@
-     totalUserFeePct: BigNumber,
-     gasPrice: BigNumber,
--    gasLimit?: BigNumber
-+    gasLimit?: BigNumber,
-+    acrossEdgeTrace?: string
-   ): void {
-@@ -1275,2 +1351,5 @@
--      multiCallerClient.enqueueTransaction({ contract, chainId, method, args, gasLimit, message, mrkdwn });
-+      multiCallerClient.enqueueTransaction({
-+        contract, chainId, method, args, gasLimit, message, mrkdwn,
-+        acrossEdgeTraceIds: acrossEdgeTrace ? [acrossEdgeTrace] : undefined,
-+      });
-     } else {
-@@ -1422,5 +1501,10 @@
-       gasPrice: BigNumber;
-       relayerFeePct: BigNumber;
-       totalUserFeePct: BigNumber;
-+      inputAmountUsd?: BigNumber;
-+      outputAmountUsd?: BigNumber;
-+      grossRelayerFeeUsd?: BigNumber;
-+      nativeTokenFillCostUsd?: BigNumber;
-+      netRelayerFeeUsd?: BigNumber;
-     }> => {
-       const {
-@@ -1430,12 +1514,22 @@
-         gasPrice,
-         netRelayerFeePct: relayerFeePct,
-         totalFeePct: totalUserFeePct,
-+        inputAmountUsd,
-+        outputAmountUsd,
-+        grossRelayerFeeUsd,
-+        nativeTokenFillCostUsd,
-+        netRelayerFeeUsd,
-       } = await profitClient.isFillProfitable(deposit, lpFeePct, preferredChainId);
-       return {
-         profitable,
-         gasLimit,
-         gasCost,
-         gasPrice,
-         relayerFeePct,
-         totalUserFeePct,
-+        inputAmountUsd,
-+        outputAmountUsd,
-+        grossRelayerFeeUsd,
-+        nativeTokenFillCostUsd,
-+        netRelayerFeeUsd,
-       };
-@@ -1475,8 +1569,13 @@
-       return {
-         gasLimit,
-         gasCost,
-         gasPrice,
-         relayerFeePct,
-         totalUserFeePct,
-         lpFeePct,
-+        inputAmountUsd: repaymentChainProfitabilities[preferredChainIndex].inputAmountUsd,
-+        outputAmountUsd: repaymentChainProfitabilities[preferredChainIndex].outputAmountUsd,
-+        grossRelayerFeeUsd: repaymentChainProfitabilities[preferredChainIndex].grossRelayerFeeUsd,
-+        nativeTokenFillCostUsd: repaymentChainProfitabilities[preferredChainIndex].nativeTokenFillCostUsd,
-+        netRelayerFeeUsd: repaymentChainProfitabilities[preferredChainIndex].netRelayerFeeUsd,
-       };
+index b7ffe4eb6d438cc5fb9e9753ce6c8bcab2ce4663..9be1c69c44065127a82f7fbdc63627490f01b8e7 100644
+GIT binary patch
+delta 3996
+zcmc&%U5pb|6wU$$Q;4#_inxMz8!&BBhd(7|mbKYk7PAUn*)19ZWOh1pTdq63Q|8{;
+z-BOz-1Ri|Qkc?r&BX2&Ljny}e!Ni0IO-zW97ZYOi4T+J+lN!&x)0t_f1^OaB&F($t
+ze&^hCzVp++Z?C&?>50|P*EbL%wBqvdvh7lSf|*$rO^{N~Ef=senn1{Q`NPB|$7XC6
+zTY42cM=<UIKy^+Qao%3Q^a!!6Nt<<;3G7hJ9|BV!O(cpgH8`;;(hXsB$}Hi$qZ@eI
+zOqsZ1Gs0DL*#9G~BE}s;OQ;4<a4>frispCKyw&BQHFb66%*enCYgPDv->1(t>hq(C
+zdW4S4gpY?7QjF^*tfFLoZxX!+pK<@QFPT9Vy=vLIsiIkI*p7L~H<>{$U7+?7eGR-=
+zw23KwAVrj_IJSWqQ!rgr#wTZI=H|4i!>>1{wCUVje)hz%sa$?MKRuH}BV%JI$sHFb
+z(=F#kCW7mXn~)S`$sru4;2fd(2yIH6dK+-iuG$-OGdaa~i4?1;8d}5-gYc>7Kn9`%
+zuY!;5It>GBWt-aEro_-FQ$s^%9Zt$vDUcGOJe5|sJtu>jN@viLZdsbk4HZ$mgbwTA
+zicpxIn~8K3MQMcy)zkIUbRL{di&!V{a>aHyGAy03<~Qp<KJR@pl4!*8ipCzCX@C(A
+zH*Csyo7Pca+PEZ%Ua&9#w1}Y;EZbP{NsSJTp|ZX_5uNy0_;hFDMaDBScft}EOw$M?
+zJLY9ZI)VaA+5)bsf@-!S!ZvwUCv@7ZtKRYZ+qTaK%DzxDgj9ffdrm#$t?t{9Xgj*R
+zXLw`FeQEc~+JUVT0f4Mojf<jE1JjB;l!XSF$jP#URJHu`>saI7>Z{vFddPi5UA6%g
+zt&C;{c5aH@)xFh&!z&eKV8d`A!OMo_GKjk7_&q>H-nkdIr?@>)<(M7VA2|@H5?<9z
+zteY00SoIn^o=*l~CN_v*D2N#+qHn<8f`Y1d_p9A`rG)vU>o}P5JRC;IL6l^Yqj0q4
+zJg@+H*W|HAWrI__-!E=!Si*mN&LxYw1>hR6sz{u&w9hmKUsfczBlVp`3*Z?kyO!@Z
+z)*Y*=K~-rIT@OjAqLGL}5@s-z`8f4-bK$~;wGGiSVydBLIwWSSU5N%2v9=H1B2f&T
+zLGjDOyMJ*@|Dh4xDhLBY{RN_^TdeI8#GG+0iWJb`=^i{7?Bap<*Zm#Mdzb!Pzd1h4
+zG70b6!L27@Dn-6^PpnARdsel{V?(NW`-6=GeI^Q_u2hL3QhP{iLD+&O0-a1neyl`m
+zE)uR6h~<}&D464-rzc$+$Se%74t^I)wm@O(OlnYDi&WqkdUILQU38%&v}nH%B2;hw
+z`eE&Vf7TJ{bmVdGM-j^0Vv!g`yriI8IyG?TTTWiS*>5fVXDK??*IPQKf(_%^u*)!$
+zM3Oq6wELqk*YwG{-kfXAgudEC#KDdlKiQLuUGEGn!HPufGBIGksD+1OH|wCG9EN*u
+z4Z~V$RkR|;TE*bn5+*8W>J~YV&7&3AGv6|J`#RDF*gnTJmzn-$c^d7wZFf;Ni;^dD
+zZ{}v+$%T^$f&JFztN9}_f{HK1kHi8f*>i#sDW4U3*4>V>fY=DOsNU`Yq~EIi6+kP(
+zVhv*p+GmK{yOjy-M?+(t?d@#WlKvn#@9NjX19k7GE9SvW+s4#6Hc_@sBv*N)!t!k5
+zBB9>(XNSDYSD$JYR?sUu{SF)rL#YhERG8dHn-{*l{^XMZ2fWE2Mvp};J9cT>1Omp+
+zz>ib0qcf2w*leD<p|0`XzqzS-{m0zUV0_4Ay=!;2Y>LwY4!3UZ{&6I9w>=;?LN?eH
+zV(*_jKR@=t=H2@3m&b0j`Ptns)^&wf^}fHm)BEm^p+SGa4XfB6?(1N<hbk{Au{1<H
+n=&rNy*2_w_FuK?~S>fgVN^gZWfY{OyUL928$!?y#H#GJyPlI9~
 
-diff --git a/test/TransactionClient.ts b/test/TransactionClient.ts
---- a/test/TransactionClient.ts
-+++ b/test/TransactionClient.ts
-@@ -10,7 +10,7 @@
- import { CHAIN_ID_TEST_LIST as chainIds } from "./constants";
- import { MockedTransactionClient, txnClientPassResult } from "./mocks/MockTransactionClient";
--import { createSpyLogger, Contract, expect, randomAddress, toBN, winston, ethers as testEthers } from "./utils";
-+import { assertPromiseError, createSpyLogger, Contract, expect, randomAddress, sinon, toBN, winston, ethers as testEthers } from "./utils";
- 
- const { spyLogger }: { spyLogger: winston.Logger } = createSpyLogger();
- const address = randomAddress(); // Test contract address
- const method = "testMethod";
-@@ -125,5 +125,76 @@
-     expect(isDefined(gasLimit)).to.be.true;
-     expect((gasLimit as BigNumber).gt(0)).to.be.true;
-   });
- 
-+  it("Prepares deterministic unsigned transaction without signing or sending", async function () {
-+    const chainId = Number(chainIds[0]);
-+    const signerPopulate = sinon.stub().callsFake(async (request: ethers.providers.TransactionRequest) => ({
-+      ...request,
-+      nonce: BigNumber.from(7),
-+      gasLimit: request.gasLimit ?? BigNumber.from(21_000),
-+      gasPrice: BigNumber.from(2),
-+      chainId,
-+      type: 0,
-+    }));
-+    const signTransaction = sinon.stub().rejects(new Error("signing forbidden"));
-+    const sendTransaction = sinon.stub().rejects(new Error("sending forbidden"));
-+    const contract = {
-+      address,
-+      populateTransaction: {
-+        [method]: sinon.stub().resolves({ to: address, data: "0x1234", value: BigNumber.from(0) }),
-+      },
-+      signer: {
-+        populateTransaction: signerPopulate,
-+        signTransaction,
-+        sendTransaction,
-+      },
-+    } as unknown as Contract;
-+    const txn: AugmentedTransaction = {
-+      chainId,
-+      contract,
-+      method,
-+      args: [],
-+      gasLimit: BigNumber.from(25_000),
-+    };
-+
-+    const first = await txnClient.prepare(txn);
-+    const second = await txnClient.prepare(txn);
-+    expect(first.serialized).to.equal(second.serialized);
-+
-+    const parsed = ethers.utils.parseTransaction(first.serialized);
-+    expect(parsed.to).to.equal(address);
-+    expect(parsed.nonce).to.equal(7);
-+    expect(parsed.data).to.equal("0x1234");
-+    expect(parsed.gasLimit.eq(25_000)).to.be.true;
-+    expect(signTransaction.called).to.be.false;
-+    expect(sendTransaction.called).to.be.false;
-+  });
-+
-+  it("Fails closed when a populated nonce exceeds the JS safe integer range", async function () {
-+    const chainId = Number(chainIds[0]);
-+    const contract = {
-+      address,
-+      populateTransaction: {
-+        [method]: sinon.stub().resolves({ to: address, data: "0x1234", value: BigNumber.from(0) }),
-+      },
-+      signer: {
-+        populateTransaction: sinon.stub().resolves({
-+          to: address,
-+          nonce: BigNumber.from(Number.MAX_SAFE_INTEGER.toString()).add(1),
-+          gasLimit: BigNumber.from(21_000),
-+          gasPrice: BigNumber.from(2),
-+          data: "0x1234",
-+          value: BigNumber.from(0),
-+          chainId,
-+          type: 0,
-+        }),
-+      },
-+    } as unknown as Contract;
-+
-+    await assertPromiseError(
-+      txnClient.prepare({ chainId, contract, method, args: [] }),
-+      "nonce exceeds JS safe integer range"
-+    );
-+  });
-+
-   it("Transaction submission applies gasLimitMultiplier", async function () {
+delta 101
+zcmV-r0Gj{Eg$4cK1hBOS0)0EPV+yu<vml9p1G5c|`v<d+mIMK_YM68Zv#OfR1C#V%
+zEwgr?i2{?)q+gTKQ4^DYVhpo|r6M)6#oECLlaAv%vmNA-7n5iF(UZUZ+_NJ8v;?=i
+H1py5`cU&;!
 
-diff --git a/test/ProfitClient.ConsiderProfitability.ts b/test/ProfitClient.ConsiderProfitability.ts
---- a/test/ProfitClient.ConsiderProfitability.ts
-+++ b/test/ProfitClient.ConsiderProfitability.ts
-@@ -33,6 +33,7 @@
-   expect,
-   hubPoolFixture,
-   randomAddress,
-+  sinon,
-   winston,
- } from "./utils";
- 
-@@ -194,5 +194,49 @@
-     profitClient.setGasCosts(gasCost);
-     profitClient.setTokenPrices(tokenPrices);
-   });
- 
-+  it("Exposes observed profitability economics and leaves failed observations undefined", async () => {
-+    const observed: FillProfit = {
-+      inputTokenPriceUsd: toBNWei(1),
-+      inputAmountUsd: toBNWei(101),
-+      outputTokenPriceUsd: toBNWei(1),
-+      outputAmountUsd: toBNWei(100),
-+      grossRelayerFeePct: toBNWei("0.01"),
-+      grossRelayerFeeUsd: toBNWei(1),
-+      auxiliaryNativeTokenCost: bnZero,
-+      auxiliaryNativeTokenCostUsd: bnZero,
-+      nativeGasCost: toBN(21_000),
-+      tokenGasCost: toBNWei("0.001"),
-+      gasPrice: bnOne,
-+      gasPadding: fixedPoint,
-+      gasMultiplier: fixedPoint,
-+      gasTokenPriceUsd: toBNWei(1),
-+      gasCostUsd: toBNWei("0.001"),
-+      nativeTokenFillCostUsd: toBNWei("0.001"),
-+      netRelayerFeePct: toBNWei("0.009"),
-+      netRelayerFeeUsd: toBNWei("0.999"),
-+      totalFeePct: toBNWei("0.01"),
-+      profitable: true,
-+    };
-+    const success = sinon.stub(profitClient, "getFillProfitability").resolves(observed);
-+    const result = await profitClient.isFillProfitable(v3DepositTemplate, lpFeePct, destinationChainId);
-+
-+    expect(result.profitable).to.equal(observed.profitable);
-+    expect(result.inputAmountUsd?.eq(observed.inputAmountUsd)).to.be.true;
-+    expect(result.outputAmountUsd?.eq(observed.outputAmountUsd)).to.be.true;
-+    expect(result.grossRelayerFeeUsd?.eq(observed.grossRelayerFeeUsd)).to.be.true;
-+    expect(result.nativeTokenFillCostUsd?.eq(observed.nativeTokenFillCostUsd)).to.be.true;
-+    expect(result.netRelayerFeeUsd?.eq(observed.netRelayerFeeUsd)).to.be.true;
-+    success.restore();
-+
-+    const failure = sinon.stub(profitClient, "getFillProfitability").rejects(new Error("forced profitability failure"));
-+    const missing = await profitClient.isFillProfitable(v3DepositTemplate, lpFeePct, destinationChainId);
-+    expect(missing.inputAmountUsd).to.equal(undefined);
-+    expect(missing.outputAmountUsd).to.equal(undefined);
-+    expect(missing.grossRelayerFeeUsd).to.equal(undefined);
-+    expect(missing.nativeTokenFillCostUsd).to.equal(undefined);
-+    expect(missing.netRelayerFeeUsd).to.equal(undefined);
-+    failure.restore();
-+  });
-+
-   // Verify gas cost calculation first, so we can leverage it in all subsequent tests.
+diff --git a/src/relayer/RelayerClientHelper.ts b/src/relayer/RelayerClientHelper.ts
+index 0031599abeafc2704ce56b9cbce703a9d6bfd794..a6a1d9e62ff2e69d6c5d44afcd1471102db01a6e 100644
+GIT binary patch
+delta 819
+zcmah{&uSAv7)Qh&3PR(-1WL=71xo_WR<A9o#B|jnlA5gz6eVnSzReDqomuD4#t2e;
+z0uTEX-h@0tAHaw3D4xA|aCSG=ga76*%<jzZ-}ikV9)5oEG2O^dHrFnKPzt3yGR1S0
+zVkD_XKMshPLl;shLR88{p1HmLaNzr6@92>?KKF)$@o0E_>W%%!y`#Yhy4@}~S{if?
+z)&WAnl`i&(PK`t|6h>n|4k%ZaRgu|qO__2D5|c0L+xhp}&HP>ccD{M5_H5VUU$zSt
+z8bRyt?sj(mEZ{1UU@I)dj+LJ!?fkIWm^i&MW~ayrZ*0)cyhsYFimFVS3aJ%%XHP*E
+zZWRd576;(}{BflgXeu~R1rsL184{;7`!;7AS(H#t6O(|%fOHB1STTb_y$`XOK<Nxp
+zX4DlU5{M{cD`6J~Iz~CC3W0Kaq8g9~6K0>4V3oh9y{}uY6CqfiQRLdK@{(OxeyMfV
+z@^5f?vA0*GS-GfUN@E+47~30;8A@yOm7x+rNFY`xLkM`8SkWn`d<rvMxV96P>NKwE
+z2C11a8bUybw4+hffpV1EB1!R45gUaM2+U*35V$BQ2`Wu_RlKSO_Vuq3DP*d#QCZTf
+z$n#Il?X$b~qFDFAHgk31Mp7g#=iYyo(_Ufsf5Ya@#+_x>czt85`L7XMe%)HXzPxNk
+G*M0y6IT_yo
+
+delta 249
+zcmX|)y-EW?5XX^2QArUJ5RA<~V3B}q>@|f5HWm@?3HI*hlEu57V|V<j>}~fc?38-~
+z@jYyOguFoZ3|P&~@BcBsx9>L}O+OqB+^c`6!6jrxwZb9}_hdYsp<q}R_=a**zH~bB
+zl{VHx7#SgMqOBM$RCLJL7&QX6gtXy%x?`@cD??V$kUIosGmzC;75#rrDzZGR2XBc|
+zD)fe<_H)?Z+fU8XlEXZlC!@<rraf)R^rG`~d<*|rUloNT?=eUEf2h)NJ&EEr(Egk}
+R@3t~NNW$0gcPpp7vjOy+S0?}f
+

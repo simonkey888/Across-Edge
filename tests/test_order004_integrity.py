@@ -18,7 +18,11 @@ def test_dotenv_boundary_rejects_secret_bearing_checkout(tmp_path):
     try:audit_upstream_dotenv(tmp_path)
     except SafetyViolation as exc:assert '.env' in str(exc) and 'not-a-real-token' not in str(exc)
     else:raise AssertionError('dotenv reinjection was not blocked')
-    (tmp_path/'.env').unlink();(tmp_path/'.env.example').write_text('API_TOKEN=example\n');assert audit_upstream_dotenv(tmp_path)['status']=='PASS'
+    (tmp_path/'.env').unlink();(tmp_path/'.env.example').write_text('API_TOKEN=example\n');(tmp_path/'.env.sample').write_text('API_TOKEN=sample\n');(tmp_path/'.env.template').write_text('API_TOKEN=template\n');assert audit_upstream_dotenv(tmp_path)['status']=='PASS'
+    (tmp_path/'.env.local').write_text('API_TOKEN=real\n')
+    try:audit_upstream_dotenv(tmp_path)
+    except SafetyViolation:pass
+    else:raise AssertionError('.env.local must remain blocked')
 
 def test_dotenv_boundary_blocks_child_launch_before_process(monkeypatch,tmp_path):
     (tmp_path/'.git').mkdir();(tmp_path/'.env').write_text('API_TOKEN=sentinel-secret-value\n')

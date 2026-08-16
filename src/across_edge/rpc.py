@@ -13,7 +13,7 @@ class JsonRpcClient:
     def label(self):return sanitize_endpoint(self.endpoint)
     def call(self,method:str,params:list|None=None)->RpcResult:
         assert_read_only_rpc_method(method);self._id+=1
-        payload=json.dumps({'jsonrpc':'2.0','id':self._id,'method':method,'params':params or []}).encode();req=urllib.request.Request(self.endpoint,data=payload,headers={'content-type':'application/json'});start=time.perf_counter_ns()
+        payload=json.dumps({'jsonrpc':'2.0','id':self._id,'method':method,'params':params or []}).encode();req=urllib.request.Request(self.endpoint,data=payload,headers={'content-type':'application/json','user-agent':'Across-Edge-shadow/1.0'});start=time.perf_counter_ns()
         try:
             with urllib.request.urlopen(req,timeout=self.timeout) as resp:body=json.loads(resp.read().decode())
             if 'error' in body:raise RuntimeError(f"RPC error: {body['error']}")

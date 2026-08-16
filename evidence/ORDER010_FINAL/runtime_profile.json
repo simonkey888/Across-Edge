@@ -1,0 +1,17 @@
+{
+  "address_filter_path": "./across-edge-addresses.json",
+  "arbitrum_public_fallbacks": ["https://arb1.arbitrum.io/rpc", "https://arbitrum.drpc.org"],
+  "base_public_fallbacks": ["https://mainnet.base.org", "https://base.drpc.org"],
+  "mainnet_public_fallbacks": ["https://eth.drpc.org", "https://gateway.tenderly.co/public/mainnet"],
+  "node_max_concurrency": 1,
+  "paid_rpc": false,
+  "redis": {"loopback": true, "maxmemory": "256mb", "persistence": false, "policy": "allkeys-lru"},
+  "relayer_destination_chains": [8453],
+  "relayer_origin_chains": [42161],
+  "send_relays": false,
+  "send_slow_relays": false,
+  "send_transactions": false,
+  "wallet": "void",
+  "write_rpc": false,
+  "zero_write_shadow": true
+}
