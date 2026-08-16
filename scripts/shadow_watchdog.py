@@ -27,6 +27,9 @@ def main(argv=None):
  (state/'watchdog.pid').write_text(str(os.getpid())+'\n');stop=False;child=None;restarts=0
  def sig(*_):
   nonlocal stop;stop=True
+ def sleep_or_stop(seconds):
+  deadline=time.monotonic()+seconds
+  while not stop and time.monotonic()<deadline:time.sleep(min(.2,max(0,deadline-time.monotonic())))
  old={s:signal.signal(s,sig) for s in (signal.SIGTERM,signal.SIGINT)}
  try:
   while not stop:
@@ -34,13 +37,13 @@ def main(argv=None):
    if log.exists() and log.stat().st_size>20_000_000:
     oldlog=state/'activation.log.1';oldlog.unlink(missing_ok=True);log.replace(oldlog)
    stream=log.open('a',buffering=1)
-   cmd=[sys.executable,str(ROOT/'scripts'/'shadow_run.py'),str(Path(a.relayer_dir).resolve()),'--source-head',a.source_head,'--run-id',a.run_id,'--db',str(state/'shadow.sqlite'),'--out',str(state/'live'),'--heartbeat',str(state/'heartbeat.json'),'--polling-delay',str(a.polling_delay),'--export-interval','30']
+   cmd=[sys.executable,str(ROOT/'scripts'/'shadow_run.py'),str(Path(a.relayer_dir).resolve()),'--source-head',a.source_head,'--run-id',a.run_id,'--db',str(state/'shadow.sqlite'),'--out',str(state/'live'),'--polling-delay',str(a.polling_delay),'--export-interval','30']
    child=subprocess.Popen(cmd,cwd=ROOT,stdout=stream,stderr=subprocess.STDOUT,text=True,start_new_session=True);started=utc();atomic(state/'watchdog.json',{'watchdog_pid':os.getpid(),'child_pid':child.pid,'child_started_at_utc':started,'last_watchdog_heartbeat_utc':utc(),'watchdog_restarts':restarts,'running':True})
    while not stop and child.poll() is None:
-    atomic(state/'watchdog.json',{'watchdog_pid':os.getpid(),'child_pid':child.pid,'child_started_at_utc':started,'last_watchdog_heartbeat_utc':utc(),'watchdog_restarts':restarts,'running':True});time.sleep(10)
+    atomic(state/'watchdog.json',{'watchdog_pid':os.getpid(),'child_pid':child.pid,'child_started_at_utc':started,'last_watchdog_heartbeat_utc':utc(),'watchdog_restarts':restarts,'running':True});sleep_or_stop(10)
    rc=child.poll();stream.close()
    if stop:kill_group(child);break
-   kill_group(child,2);restarts+=1;atomic(state/'watchdog.json',{'watchdog_pid':os.getpid(),'child_pid':None,'last_child_exit':rc,'last_watchdog_heartbeat_utc':utc(),'watchdog_restarts':restarts,'running':True});time.sleep(min(30,2**min(restarts,5)))
+   kill_group(child,2);restarts+=1;atomic(state/'watchdog.json',{'watchdog_pid':os.getpid(),'child_pid':None,'last_child_exit':rc,'last_watchdog_heartbeat_utc':utc(),'watchdog_restarts':restarts,'running':True});sleep_or_stop(min(30,2**min(restarts,5)))
  finally:
   if child is not None:kill_group(child)
   atomic(state/'watchdog.json',{'watchdog_pid':os.getpid(),'child_pid':None,'last_watchdog_heartbeat_utc':utc(),'watchdog_restarts':restarts,'running':False});(state/'watchdog.pid').unlink(missing_ok=True)

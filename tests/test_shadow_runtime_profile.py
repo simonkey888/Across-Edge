@@ -30,3 +30,14 @@ def test_upstream_safe_command_supervises_direct_canonical_entrypoint():
     assert cmd[:3]==['node','./dist/index.js','--relayer']
     assert cmd[cmd.index('--wallet')+1]=='void'
     assert 'yarn' not in cmd
+
+
+def test_watchdog_child_argv_matches_shadow_run_contract():
+    text=Path('scripts/shadow_watchdog.py').read_text()
+    assert "'--heartbeat'" not in text
+    assert "'--source-head'" in text and "'--run-id'" in text and "'--db'" in text and "'--out'" in text
+
+def test_stop_targets_watchdog_service_and_disables_restart():
+    text=Path('scripts/stop_shadow.py').read_text()
+    assert "service-config.json" in text and "d['enabled']=False" in text
+    assert "watchdog.pid" in text and "os.killpg" in text

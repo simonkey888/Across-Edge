@@ -3,7 +3,7 @@
 This commit materializes the AUD-established runtime corrections on the existing Draft PR without changing `main` or the approved upstream pin.
 
 Final static gates executed after the last source/patch representation change:
-- Across-Edge pytest: **80 passed**.
+- Across-Edge pytest: **82 passed**.
 - compileall: **PASS**.
 - full committed-surface secret scan: **PASS**.
 - safety runtime: **PASS**.
