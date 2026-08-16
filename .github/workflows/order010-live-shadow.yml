@@ -101,15 +101,7 @@ jobs:
           trap 'kill -TERM "$SHADOW_PID" 2>/dev/null || true; wait "$SHADOW_PID" 2>/dev/null || true' EXIT TERM INT
           while kill -0 "$SHADOW_PID" 2>/dev/null; do
             if [ -f evidence/ORDER010_FINAL/heartbeat.json ]; then
-              python - <<'PY'
-import json
-from pathlib import Path
-p=Path('evidence/ORDER010_FINAL/heartbeat.json')
-if p.exists():
- d=json.loads(p.read_text())
- keep={k:d.get(k) for k in ['last_heartbeat_utc','qualification_runtime_seconds','relayer_alive','observer_arbitrum_alive','observer_base_alive','observer_cycles','relayer_restarts','relayer_init_complete','relayer_loops_completed','deposits_observed','fills_observed','decode_gaps','send_relays','send_transactions','wallet','spend_usd','last_error']}
- print('HEARTBEAT '+json.dumps(keep,sort_keys=True))
-PY
+              python -c "import json,pathlib; p=pathlib.Path('evidence/ORDER010_FINAL/heartbeat.json'); d=json.loads(p.read_text()); ks=['last_heartbeat_utc','qualification_runtime_seconds','relayer_alive','observer_arbitrum_alive','observer_base_alive','observer_cycles','relayer_restarts','relayer_init_complete','relayer_loops_completed','deposits_observed','fills_observed','decode_gaps','send_relays','send_transactions','wallet','spend_usd','last_error']; print('HEARTBEAT '+json.dumps({k:d.get(k) for k in ks},sort_keys=True))"
             fi
             sleep 60
           done
