@@ -1,0 +1,128 @@
+name: order010-live-shadow
+
+on:
+  push:
+    branches: [order-001-shadow-relayer]
+    paths:
+      - '.github/workflows/order010-live-shadow.yml'
+      - '.runtime/order010-trigger.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: order010-live-shadow
+  cancel-in-progress: false
+
+jobs:
+  live-shadow:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    steps:
+      - name: Checkout exact branch HEAD
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Runtime identity
+        run: |
+          set -euo pipefail
+          echo "HEAD=$(git rev-parse HEAD)"
+          echo "BRANCH=${GITHUB_REF_NAME}"
+          echo "RUN_ID=${GITHUB_RUN_ID}"
+          echo "STARTED_UTC=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.0'
+
+      - name: Install local requirements
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y redis-server
+          python -m pip install --disable-pip-version-check -e . pytest
+          corepack enable
+
+      - name: Verify Across-Edge safety gates
+        run: |
+          set -euo pipefail
+          python -m pytest -q
+          python -m compileall -q src scripts
+          python scripts/secret_scan.py
+          PYTHONPATH=src python -m across_edge.cli safety-check
+
+      - name: Prepare pinned upstream
+        run: |
+          set -euo pipefail
+          PIN=$(python -c 'import json;print(json.load(open("config/upstream-pin.json"))["sha"])')
+          PATCH=$(python -c 'import json;print(json.load(open("config/upstream-pin.json"))["instrumentation_patch"])')
+          PATCH_SHA=$(python -c 'import json;print(json.load(open("config/upstream-pin.json"))["instrumentation_patch_sha256"])')
+          test "$PIN" = '741ca9f7d72923f7b13c1c2462ca90eba81e1a87'
+          test "$(sha256sum "$PATCH" | awk '{print $1}')" = "$PATCH_SHA"
+          git clone --filter=blob:none https://github.com/across-protocol/relayer.git upstream-relayer
+          git -C upstream-relayer fetch --depth 1 origin "$PIN"
+          git -C upstream-relayer checkout --detach "$PIN"
+          git -C upstream-relayer apply --check "$GITHUB_WORKSPACE/$PATCH"
+          git -C upstream-relayer apply "$GITHUB_WORKSPACE/$PATCH"
+          git -C upstream-relayer diff --check
+
+      - name: Build pinned upstream
+        working-directory: upstream-relayer
+        run: |
+          set -euo pipefail
+          yarn install --frozen-lockfile
+          yarn typecheck:fast
+          yarn build
+
+      - name: Run live zero-write shadow
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence/ORDER010_ACTIONS
+          HEAD=$(git rev-parse HEAD)
+          python scripts/shadow_run.py "$GITHUB_WORKSPACE/upstream-relayer" \
+            --source-head "$HEAD" \
+            --run-id "order010-actions-${GITHUB_RUN_ID}" \
+            --duration 19800 \
+            --polling-delay 5 \
+            --observer-interval 2 \
+            --export-interval 30 \
+            --db "$GITHUB_WORKSPACE/evidence/ORDER010_ACTIONS/shadow.sqlite" \
+            --out "$GITHUB_WORKSPACE/evidence/ORDER010_ACTIONS/live" &
+          SHADOW_PID=$!
+          trap 'kill -TERM "$SHADOW_PID" 2>/dev/null || true; wait "$SHADOW_PID" 2>/dev/null || true' EXIT TERM INT
+          while kill -0 "$SHADOW_PID" 2>/dev/null; do
+            if [ -f evidence/ORDER010_FINAL/heartbeat.json ]; then
+              python - <<'PY'
+import json
+from pathlib import Path
+p=Path('evidence/ORDER010_FINAL/heartbeat.json')
+if p.exists():
+ d=json.loads(p.read_text())
+ keep={k:d.get(k) for k in ['last_heartbeat_utc','qualification_runtime_seconds','relayer_alive','observer_arbitrum_alive','observer_base_alive','observer_cycles','relayer_restarts','relayer_init_complete','relayer_loops_completed','deposits_observed','fills_observed','decode_gaps','send_relays','send_transactions','wallet','spend_usd','last_error']}
+ print('HEARTBEAT '+json.dumps(keep,sort_keys=True))
+PY
+            fi
+            sleep 60
+          done
+          wait "$SHADOW_PID"
+
+      - name: Upload runtime evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: order010-live-${{ github.run_id }}
+          path: |
+            evidence/ORDER010_ACTIONS/
+            evidence/ORDER010_FINAL/heartbeat.json
+            evidence/ORDER010_FINAL/activation.log
+          if-no-files-found: warn
+          retention-days: 7
