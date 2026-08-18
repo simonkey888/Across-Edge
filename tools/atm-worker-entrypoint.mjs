@@ -8,6 +8,7 @@ const ENTRYPOINT = 'tools/atm-worker-entrypoint.mjs';
 const WORKER_ID = 'across-edge';
 const WORKER_PROTOCOL = 'across-edge-worker/v1';
 const CHAIN_ID = 8453;
+let leaseExpiresMs = 0;
 
 function required(name) {
   const value = String(process.env[name] || '').trim();
@@ -27,13 +28,24 @@ function canonicalJson(value) { return JSON.stringify(normalize(value)); }
 function sha256Text(value) { return createHash('sha256').update(value).digest('hex'); }
 function sha256Json(value) { return sha256Text(canonicalJson(value)); }
 function fail(message, code = 30) { process.stderr.write(String(message) + '\n'); process.exit(code); }
+function remainingMs(capMs) {
+  const remaining = leaseExpiresMs - Date.now();
+  if (!Number.isFinite(remaining) || remaining <= 0) fail('atm_work_lease_expired', 18);
+  return Math.max(1, Math.min(Number(capMs), Math.floor(remaining)));
+}
+function boundedSpawn(command, args, options, capMs) {
+  const run = spawnSync(command, args, { ...options, timeout: remainingMs(capMs) });
+  if (run.error?.code === 'ETIMEDOUT') fail('atm_work_lease_expired_or_subprocess_timeout', 18);
+  if (Date.now() >= leaseExpiresMs) fail('atm_work_lease_expired_after_subprocess', 18);
+  return run;
+}
 function normalizeRepo(value) {
   let text = String(value || '').trim();
   if (text.endsWith('.git')) text = text.slice(0, -4);
   return text.replace(/\/$/, '');
 }
 function git(args, cwd) {
-  const p = spawnSync('git', args, { cwd, env: process.env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  const p = boundedSpawn('git', args, { cwd, env: process.env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }, 180000);
   if (p.status !== 0) fail(String(p.stderr || p.stdout || 'git_failed'), 29);
   return String(p.stdout || '').trim();
 }
@@ -51,9 +63,12 @@ try {
   const resultPath = required('ATM_TASK_RESULT_PATH');
   const executionJobId = required('ATM_EXECUTION_JOB_ID');
   const workLeaseId = required('ATM_WORK_LEASE_ID');
+  const leaseExpiresAt = required('ATM_WORK_LEASE_EXPIRES_AT');
   const atmScopeHash = required('ATM_SCOPE_HASH');
   const atmJobSpecHash = required('ATM_JOB_SPEC_HASH');
   const sourceSha = required('ATM_WORKER_SOURCE_SHA');
+  leaseExpiresMs = Date.parse(leaseExpiresAt);
+  if (!Number.isFinite(leaseExpiresMs) || leaseExpiresMs <= Date.now()) fail('invalid_or_expired_atm_work_lease', 18);
   if (process.env.ATM_MAX_SPEND_USD !== '0') fail('nonzero_spend_boundary', 20);
   if (!/^[0-9a-f]{40}$/.test(sourceSha)) fail('invalid_worker_source_sha', 21);
 
@@ -97,7 +112,7 @@ try {
     value: 0,
   };
 
-  const now = Date.now();
+  const nativeTimeoutMs = remainingMs(300000);
   const nativeJob = {
     schema_version: WORKER_PROTOCOL,
     job_id: String(spec.job_id),
@@ -130,8 +145,8 @@ try {
     allowed_read_endpoints: [],
     max_spend_usd: 0,
     lease_status: 'ACTIVE',
-    lease_expires_at: new Date(now + 15 * 60 * 1000).toISOString(),
-    timeout_seconds: 300,
+    lease_expires_at: leaseExpiresAt,
+    timeout_seconds: Math.max(1, Math.min(300, Math.floor(nativeTimeoutMs / 1000))),
   };
   const scopeMaterial = { ...nativeJob };
   delete scopeMaterial.scope_hash;
@@ -139,7 +154,7 @@ try {
   const nativeJobPath = join(nativeRoot, 'job.json');
   writeFileSync(nativeJobPath, canonicalJson(nativeJob) + '\n', { encoding: 'utf8', flag: 'wx' });
 
-  const run = spawnSync(
+  const run = boundedSpawn(
     'python',
     ['-m', 'across_edge_worker.cli', 'run', '--job', nativeJobPath, '--state-dir', stateDir, '--output-dir', outputDir],
     {
@@ -148,6 +163,7 @@ try {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
     },
+    nativeTimeoutMs,
   );
   if (run.status !== 0) {
     process.stderr.write(String(run.stderr || run.stdout || 'across_native_worker_failed') + '\n');
@@ -170,6 +186,7 @@ try {
   const checks = Array.isArray(analysis.checks) ? analysis.checks : [];
   if (checks.length !== 1 || checks[0]?.kind !== staticCheck.kind || checks[0]?.path !== staticCheck.path || checks[0]?.passed !== true) fail('across_target_static_check_missing', 44);
   if (analysis.project_hash_before !== analysis.project_hash_after) fail('across_worker_checkout_mutated', 45);
+  if (Date.now() >= leaseExpiresMs) fail('atm_work_lease_expired_before_result', 18);
 
   const inputBytes = Buffer.from(targetIdentity, 'utf8');
   const taskResult = {
