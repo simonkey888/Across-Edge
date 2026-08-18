@@ -1,8 +1,15 @@
 {
-  "cases": [
-    {"crash_point":"after_ack","deduplicated_external_reads":2,"durable_receipts":13,"first_exit":91,"recovery_exit":0,"status":"PASS","target_mutation_count":1,"terminal_artifacts":3},
-    {"crash_point":"during_rpc","deduplicated_external_reads":2,"durable_receipts":13,"first_exit":91,"recovery_exit":0,"status":"PASS","target_mutation_count":1,"terminal_artifacts":3},
-    {"crash_point":"after_artifact","deduplicated_external_reads":2,"durable_receipts":13,"first_exit":91,"recovery_exit":0,"status":"PASS","target_mutation_count":1,"terminal_artifacts":3}
+  "durable_identity_before_target_work": true,
+  "ack_binding": ["worker_source_sha", "job_id", "work_lease_id", "scope_hash"],
+  "progress_receipts_minimum": 2,
+  "crash_points": [
+    {"point":"after_ack","proof":"test_restart_after_ack_does_not_duplicate_result_or_target_mutation"},
+    {"point":"after_target_write_before_action_receipt","proof":"test_restart_after_target_write_recognizes_already_applied_mutation"},
+    {"point":"after_result_artifact_before_finalize","proof":"test_restart_after_artifact_creation_reuses_action_receipts"}
   ],
-  "status":"PASS"
+  "duplicate_target_mutation": 0,
+  "duplicate_read_interpreted_as_new_result": 0,
+  "cancellation": "durable cancel.requested marker; checked before action boundaries; no background relayer/process is launched",
+  "timeout": "max_runtime_seconds fail-closed deadline",
+  "ci_status": "CI_REQUIRED"
 }

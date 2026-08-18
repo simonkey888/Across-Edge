@@ -1,0 +1,92 @@
+name: atm-worker-ready-r1
+
+on:
+  push:
+    branches: [worker/order-wr-004-readiness-r1]
+  pull_request:
+    branches: [order-001-shadow-relayer]
+    paths:
+      - 'src/across_edge/atm_worker.py'
+      - 'src/across_edge/atm_worker_cli.py'
+      - 'tests/test_atm_worker.py'
+      - 'docs/ATM_WORKER_MODE.md'
+      - 'scripts/verify_atm_worker_evidence.py'
+      - 'evidence/ATM-WORKER-READY-R1/**'
+      - 'pyproject.toml'
+      - '.github/workflows/atm-worker-ready-r1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: atm-worker-ready-r1-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  exact-head-worker-readiness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact worker candidate
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Record immutable CI identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence/ATM-WORKER-READY-R1/CI_RUNTIME
+          {
+            echo "GITHUB_SHA=${GITHUB_SHA}"
+            echo "CHECKOUT_SHA=$(git rev-parse HEAD)"
+            echo "GITHUB_REF=${GITHUB_REF}"
+            echo "RUN_ID=${GITHUB_RUN_ID}"
+            echo "RUN_ATTEMPT=${GITHUB_RUN_ATTEMPT}"
+            echo "BASE_RELAYER_SHA=8a70960d838880c9735fcfb405b04bca0b4f4061"
+            echo "OUTGOING_SPEND_USD=0"
+            echo "FINANCIAL_AUTHORITY=0"
+            echo "SIGNING=0"
+            echo "TRANSACTION_BROADCAST=0"
+            echo "WRITE_RPC=0"
+          } | tee evidence/ATM-WORKER-READY-R1/CI_RUNTIME/identity.txt
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      - name: Install local package and pytest
+        run: python -m pip install --disable-pip-version-check --no-deps -e . pytest
+      - name: Worker contract and capability tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q tests/test_atm_worker.py | tee evidence/ATM-WORKER-READY-R1/CI_RUNTIME/worker-tests.txt
+      - name: Full standalone Across-Edge regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q | tee evidence/ATM-WORKER-READY-R1/CI_RUNTIME/full-tests.txt
+      - name: Compile and safety gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall -q src scripts
+          echo COMPILEALL=PASS | tee evidence/ATM-WORKER-READY-R1/CI_RUNTIME/compileall.txt
+          python scripts/secret_scan.py | tee evidence/ATM-WORKER-READY-R1/CI_RUNTIME/secret-scan.txt
+          PYTHONPATH=src python -m across_edge.cli safety-check | tee evidence/ATM-WORKER-READY-R1/CI_RUNTIME/project-safety.txt
+          python -m across_edge.atm_worker_cli capabilities | tee evidence/ATM-WORKER-READY-R1/CI_RUNTIME/worker-capabilities.json
+      - name: Evidence manifest gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/verify_atm_worker_evidence.py | tee evidence/ATM-WORKER-READY-R1/CI_RUNTIME/evidence-manifest.txt
+          sha256sum evidence/ATM-WORKER-READY-R1/CI_RUNTIME/* > evidence/ATM-WORKER-READY-R1/CI_RUNTIME/MANIFEST.sha256
+      - name: Upload exact-head qualification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: atm-worker-ready-r1-${{ github.sha }}-${{ github.run_id }}
+          path: evidence/ATM-WORKER-READY-R1/CI_RUNTIME/
+          retention-days: 30
+          if-no-files-found: error

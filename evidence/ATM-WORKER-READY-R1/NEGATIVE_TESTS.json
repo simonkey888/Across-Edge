@@ -1,9 +1,10 @@
 {
-  "external_mutation_refusal":"PASS",
-  "hostile_path_symlink_hook_environment_rpc_tests":"PASS",
-  "status":"PASS",
-  "tampered_result_claim_test":"PASS",
-  "test_command":"PYTHONPATH=src:tests python -m unittest discover -s tests -v",
-  "unsigned_signed_material_negative_test":"PASS",
-  "worker_scope_lease_spend_chain_endpoint_negative_tests":"PASS"
+  "cases": ["worker_id mismatch","scope_hash mismatch","expired or terminal lease","nonzero max_spend_usd","unsupported capability","external mutation requested","target SHA mismatch","path traversal/out-of-scope path","symlink target surface","ambient credentials stripped","signed transaction material","disallowed transaction chain","write JSON-RPC method","RPC redirect/host change","RPC chain ID spoof","malformed JSON-RPC response","bad block provenance","tampered durable action/result binding","cancellation","timeout"],
+  "ci_status": "CI_REQUIRED",
+  "expected": "FAIL_CLOSED_OR_CANNOT_HANDLE_WITH_ZERO_EXTERNAL_MUTATION",
+  "negative_tests": [
+    {"case":"target_repository_origin_mismatch","expected":"FAIL_CLOSED"},
+    {"case":"generated_artifact_contains_secret","expected":"FAIL_CLOSED"}
+  ],
+  "test_file": "tests/test_atm_worker.py"
 }

@@ -1,9 +1,17 @@
-# Chain/RPC boundary
+# CHAIN_RPC_BOUNDARY
 
-Exact HTTPS read endpoints; write methods absent.
+ATM worker protocol access is read-only.
 
-- chain `42161` via `arbitrum-one-rpc.publicnode.com`: block `495785647`, hash `0x0824ad9aa6c0bd201cea4b5149c61ec2b3f0ddceaef79d05c3d94cdb0e98382a`, as-of `2026-08-18T09:43:06.535735Z`
-- chain `8453` via `base-rpc.publicnode.com`: block `50128419`, hash `0xa5ccba9415f10cd1cef2fb819d321b44f90a44a498137823e5edde46242a63ea`, as-of `2026-08-18T09:43:07.108148Z`
+A job must bind every allowed chain ID and every HTTPS endpoint. URL credentials, query strings, non-HTTPS endpoints and undeclared chains are rejected. `ReadOnlyRpcClient` rejects redirects/final-host changes and admits only the read-method allowlist inherited from `across_edge.safety.assert_read_only_rpc_method`.
 
-- `https://arbitrum-one-rpc.publicnode.com`
-- `https://base-rpc.publicnode.com`
+Before accepting evidence, the client verifies `eth_chainId` against the frozen chain ID and reads a latest block. Evidence binds:
+
+- chain ID;
+- sanitized endpoint;
+- JSON-RPC method;
+- block number;
+- block hash;
+- observation timestamp;
+- response SHA-256.
+
+Write/send/personal/wallet RPC methods fail closed. Unsigned transactions are data structures only; signature fields and secret material are rejected and no broadcast path exists in worker mode.
