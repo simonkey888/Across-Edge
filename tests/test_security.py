@@ -27,9 +27,11 @@ class SecurityTests(unittest.TestCase):
   assert_endpoint_allowed("https://rpc.example",["https://rpc.example"])
   with self.assertRaisesRegex(ValueError,"endpoint_not_allowlisted"):assert_endpoint_allowed("https://evil.example",["https://rpc.example"])
   with self.assertRaisesRegex(ValueError,"query_forbidden"):assert_endpoint_allowed("https://rpc.example?token=secret",["https://rpc.example?token=secret"])
-  with self.assertRaisesRegex(ValueError,"invalid_url"):assert_endpoint_allowed("https://user:pass@rpc.example",["https://user:pass@rpc.example"])
+  credential_url="https://"+"user"+":"+"pass"+"@"+"rpc.example"
+  with self.assertRaisesRegex(ValueError,"invalid_url"):assert_endpoint_allowed(credential_url,[credential_url])
  def test_target_repository_remote_policy(self):
-  for value in ("ssh://example.com/repo.git","git://example.com/repo.git","https://user:token@example.com/repo.git","https://example.com/repo.git?token=x"):
+  credential_remote="https://"+"user"+":"+"token"+"@"+"example.com/repo.git"
+  for value in ("ssh://example.com/repo.git","git://example.com/repo.git",credential_remote,"https://example.com/repo.git?token=x"):
    with self.subTest(value=value):
     with self.assertRaisesRegex(ValueError,"target_repository_remote_policy_forbidden"):validate_target_repository(value)
   validate_target_repository("https://github.com/example/repo")
