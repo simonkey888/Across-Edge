@@ -3,13 +3,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_order011_bounds_bootstrap_without_increasing_heap_or_tuning_economics():
+def test_order011_bounds_bootstrap_and_uses_diagnostic_heap_without_tuning_economics():
     source = (ROOT / "scripts/order011_shadow_run.py").read_text()
     assert "LOOKBACK_SECONDS = 3600" in source
     assert "RESTART_BUDGET = 3" in source
-    assert "HEAP_LIMIT_MB = 768" in source
+    assert "HEAP_LIMIT_MB = 2048" in source
     assert 'MAX_RELAYER_DEPOSIT_LOOK_BACK' in source
     assert "--max-old-space-size={HEAP_LIMIT_MB}" in source
+    assert "Diagnostic stopgap explicitly allowed by ORDER-011" in source
     forbidden = ("profitability_threshold", "min_profit", "fee_threshold", "economic_threshold")
     assert all(token not in source.lower() for token in forbidden)
 
