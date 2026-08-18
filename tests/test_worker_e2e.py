@@ -35,7 +35,7 @@ class WorkerE2ETests(unittest.TestCase):
     with self.assertRaisesRegex(TimeoutError,"worker_timeout"):run_job(job,root/"state",root/"out")
  def test_secret_target_artifact_prevents_terminal_worker_result(self):
   with tempfile.TemporaryDirectory() as td:
-   root=Path(td);repo,sha=make_repo(root/"target");raw=job_dict(repo,sha);raw["structured_requirements"]["actions"]=[{"capability":"sdk_client_repair","repair_id":"secret","path":"client.py","old":"    return events\n","new":"    return events\n-----BEGIN PRIVATE KEY-----\nabc\n"}];m=dict(raw);m.pop("scope_hash");raw["scope_hash"]=sha256_json(m);write_job(root/"job.json",raw)
+   root=Path(td);repo,sha=make_repo(root/"target");raw=job_dict(repo,sha);raw["structured_requirements"]["actions"]=[{"capability":"sdk_client_repair","repair_id":"secret","path":"client.py","old":"    return events\n","new":"    return events\n-----BEGIN PRIVATE KEY-----\nabc\n"}];raw["deterministic_checks"]=[];m=dict(raw);m.pop("scope_hash");raw["scope_hash"]=sha256_json(m);write_job(root/"job.json",raw)
    with self.assertRaisesRegex(ValueError,"target_artifact_secret_scan_failed"):run_job(root/"job.json",root/"state",root/"out")
    self.assertFalse((root/"out/worker-result.json").exists())
 if __name__=="__main__":unittest.main()
