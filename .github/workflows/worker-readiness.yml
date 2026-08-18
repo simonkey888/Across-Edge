@@ -13,19 +13,25 @@ concurrency:
   cancel-in-progress: true
 env:
   FROZEN_RELAYER_HEAD: 8a70960d838880c9735fcfb405b04bca0b4f4061
+  CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 jobs:
   worker-contract:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
-        with: {fetch-depth: 0}
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-python@v5
         with: {python-version: "3.12"}
       - name: Exact head and dual-track ancestry
         run: |
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          git merge-base --is-ancestor "$FROZEN_RELAYER_HEAD" "$GITHUB_SHA"
+          echo "CANDIDATE_SHA=$CANDIDATE_SHA"
+          echo "CHECKOUT_SHA=$(git rev-parse HEAD)"
+          echo "EVENT_GITHUB_SHA=$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+          git merge-base --is-ancestor "$FROZEN_RELAYER_HEAD" "$CANDIDATE_SHA"
       - name: Install local package and test runner
         run: |
           python -m pip install --disable-pip-version-check --no-deps -e .
@@ -42,18 +48,18 @@ jobs:
       - name: Fresh exact-head worker evidence
         env: {PYTHONPATH: "src:tests"}
         run: |
-          python scripts/generate_worker_evidence.py --source-sha "$GITHUB_SHA" --pr2-head "$FROZEN_RELAYER_HEAD" --observed-at "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          python scripts/generate_worker_evidence.py --source-sha "$CANDIDATE_SHA" --pr2-head "$FROZEN_RELAYER_HEAD" --observed-at "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           cp /tmp/full-pytest.txt evidence/ATM-WORKER-READY-R1/CI_FULL_PYTEST.txt
           cp /tmp/compileall.txt evidence/ATM-WORKER-READY-R1/CI_COMPILEALL.txt
           cp /tmp/project-secret-scan.txt evidence/ATM-WORKER-READY-R1/CI_PROJECT_SECRET_SCAN.txt
           cp /tmp/project-safety.txt evidence/ATM-WORKER-READY-R1/CI_PROJECT_SAFETY.txt
           cp /tmp/worker-secret-scan.txt evidence/ATM-WORKER-READY-R1/CI_WORKER_SECRET_SCAN.txt
-          python scripts/finalize_worker_evidence.py --source-sha "$GITHUB_SHA" --pr2-head "$FROZEN_RELAYER_HEAD" --run-id "$GITHUB_RUN_ID"
+          python scripts/finalize_worker_evidence.py --source-sha "$CANDIDATE_SHA" --pr2-head "$FROZEN_RELAYER_HEAD" --run-id "$GITHUB_RUN_ID"
           python scripts/verify_worker_evidence.py
       - name: Upload exact-head worker evidence
         uses: actions/upload-artifact@v4
         with:
-          name: atm-worker-ready-r1-${{ github.sha }}-${{ github.run_id }}
+          name: atm-worker-ready-r1-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_id }}
           path: evidence/ATM-WORKER-READY-R1/
           retention-days: 30
           if-no-files-found: error
@@ -62,10 +68,14 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-python@v5
         with: {python-version: "3.12"}
-      - env: {PYTHONPATH: src}
+      - name: Exact-head read-only RPC qualification
+        env: {PYTHONPATH: src}
         run: |
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
           python - <<'PY'
           from across_edge_worker.rpc import ReadOnlyRpcClient
           cases=[("https://arbitrum-one-rpc.publicnode.com",42161),("https://base-rpc.publicnode.com",8453)];allowed=tuple(x[0] for x in cases);chains=tuple(x[1] for x in cases)
