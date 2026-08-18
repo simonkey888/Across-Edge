@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SHADOW_RUN = ROOT / "scripts" / "shadow_run.py"
 LOOKBACK_SECONDS = 3600
 RESTART_BUDGET = 3
-HEAP_LIMIT_MB = 768
+HEAP_LIMIT_MB = 2048
 
 spec = importlib.util.spec_from_file_location("across_edge_order011_base_shadow", SHADOW_RUN)
 if spec is None or spec.loader is None:
@@ -23,7 +23,9 @@ _original_supervisor = base.ContinuousSupervisor
 
 def runtime_env(polling_delay: int):
     env = _original_runtime_env(polling_delay)
-    # Final OOM correction: bound bootstrap history instead of hiding unbounded growth with a larger heap.
+    # Diagnostic stopgap explicitly allowed by ORDER-011: give V8 enough headroom to complete
+    # bootstrap so loop-end telemetry can prove whether memory stabilizes. This is not a
+    # profitability/economic change and is not accepted as the final fix if memory grows unbounded.
     env["MAX_RELAYER_DEPOSIT_LOOK_BACK"] = str(LOOKBACK_SECONDS)
     env["NODE_OPTIONS"] = f"--max-old-space-size={HEAP_LIMIT_MB}"
     env["ACROSS_EDGE_ORDER011"] = "true"
@@ -45,6 +47,7 @@ base.ContinuousSupervisor = BoundedRestartSupervisor
 def main(argv=None) -> int:
     os.environ["ACROSS_EDGE_ORDER011_LOOKBACK_SECONDS"] = str(LOOKBACK_SECONDS)
     os.environ["ACROSS_EDGE_ORDER011_RESTART_BUDGET"] = str(RESTART_BUDGET)
+    os.environ["ACROSS_EDGE_ORDER011_HEAP_DIAGNOSTIC_MB"] = str(HEAP_LIMIT_MB)
     return int(base.main(argv) or 0)
 
 
