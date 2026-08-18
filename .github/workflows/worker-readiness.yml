@@ -1,0 +1,39 @@
+name: ATM Worker Readiness
+on:
+  push:
+    branches: ["worker/**"]
+  pull_request:
+    paths: ["src/across_edge_worker/**","tests/**","scripts/**","docs/ATM_WORKER_MODE.md","evidence/ATM-WORKER-READY-R1/**","pyproject.toml","README.md",".github/workflows/worker-readiness.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  worker-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: python -m pip install -e .
+      - run: python -m compileall -q src scripts tests
+      - env: {PYTHONPATH: "src:tests"}
+        run: python -m unittest discover -s tests -v
+      - run: python scripts/worker_secret_scan.py
+      - run: python scripts/verify_worker_evidence.py
+  rpc-readonly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - env: {PYTHONPATH: src}
+        run: |
+          python - <<'PY'
+          from across_edge_worker.rpc import ReadOnlyRpcClient
+          cases=[("https://arbitrum-one-rpc.publicnode.com",42161),("https://base-rpc.publicnode.com",8453)];allowed=tuple(x[0] for x in cases);chains=tuple(x[1] for x in cases)
+          for url,chain in cases:
+              e=ReadOnlyRpcClient(url,allowed,chains).provenance();assert e.chain_id==chain;assert e.block_number>0;assert len(e.block_hash)==66;print(f"RPC_READ_ONLY_PASS chain={chain} block={e.block_number} hash={e.block_hash}")
+          PY

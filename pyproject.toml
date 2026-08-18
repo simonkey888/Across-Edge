@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "across-edge-worker"
+version = "1.0.0"
+description = "Read-only ATM Web3 engineering worker adapter for Across-Edge"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+across-edge-worker = "across_edge_worker.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
