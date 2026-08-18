@@ -1,0 +1,30 @@
+{
+  "artifact_hashes": {"analysis.json": "a9142ba7566c767fca2d176486645b1331e14d148c54fbf45b0171fca490aeab", "patch.diff": "dc83beaf7434c357273b662c5775f8af75ea78b04fa8de2fbd94d327e29ec3cf"},
+  "authoritative_acceptance": false,
+  "chain_evidence_refs": [
+    {"as_of": "2026-08-18T09:43:06.535735Z", "block_hash": "0x0824ad9aa6c0bd201cea4b5149c61ec2b3f0ddceaef79d05c3d94cdb0e98382a", "block_number": 495785647, "chain_id": 42161, "endpoint_host": "arbitrum-one-rpc.publicnode.com"},
+    {"as_of": "2026-08-18T09:43:07.108148Z", "block_hash": "0xa5ccba9415f10cd1cef2fb819d321b44f90a44a498137823e5edde46242a63ea", "block_number": 50128419, "chain_id": 8453, "endpoint_host": "base-rpc.publicnode.com"}
+  ],
+  "content_hashes": {"analysis": "a9142ba7566c767fca2d176486645b1331e14d148c54fbf45b0171fca490aeab"},
+  "error_class": null,
+  "executed_onchain": false,
+  "finished_at": "2026-08-18T09:43:07.258528Z",
+  "job_id": "real-world-can-handle",
+  "limitations": ["Read-only worker result; ATM independently evaluates acceptance.", "Fee outputs are derived from pinned inputs and are not realized profit."],
+  "local_commit_identity": null,
+  "outgoing_spend_usd": 0,
+  "paid": false,
+  "patch_identity": "dc83beaf7434c357273b662c5775f8af75ea78b04fa8de2fbd94d327e29ec3cf",
+  "payout_success": false,
+  "realized_profit": false,
+  "schema_version": "across-edge-worker/v1",
+  "scope_hash": "880f4efd6596c79e20fcd9ac6e5ab7e0198203f73ffc4cfc1d33b36f5fe9a04b",
+  "source_sha": "21e23138d88541196780e6c0abbc23b3780f9e2e",
+  "started_at": "2026-08-18T09:43:05.972517Z",
+  "status": "RESULT_READY",
+  "tests": [{"kind": "file_contains", "passed": true, "path": "event_manager.py"}],
+  "withdrawable": false,
+  "work_lease_id": "lease-real-world-can-handle",
+  "worker_id": "across-edge",
+  "worker_version": "1.0.0"
+}

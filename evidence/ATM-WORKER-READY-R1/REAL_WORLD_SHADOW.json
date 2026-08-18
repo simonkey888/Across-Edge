@@ -1,0 +1,24 @@
+{
+  "can_handle": {
+    "analysis_artifact_hash":"a9142ba7566c767fca2d176486645b1331e14d148c54fbf45b0171fca490aeab",
+    "patch_hash":"dc83beaf7434c357273b662c5775f8af75ea78b04fa8de2fbd94d327e29ec3cf",
+    "qualification":"isolated minimal reproduction of public bounded-retention invariant; no upstream submission",
+    "source_title":"fix(relayer): correct Solana ALT chunk count; bound EventManager retention",
+    "source_url":"https://github.com/across-protocol/relayer/pull/3726",
+    "status":"RESULT_READY",
+    "target_fixture_git_sha":"863569b383070712906f84c429054a97ff7460ce",
+    "worker_result_hash":"3207ae466c68964b1c4b3162a78dd47c8e5e1c264ac01e3181c99ded5c2d3970"
+  },
+  "cannot_handle": {
+    "reason":"external contract deployment / transaction side effects outside current authority",
+    "source_title":"chore: deploy MulticallHandler and SpokePoolPeriphery to Robinhood",
+    "source_url":"https://github.com/across-protocol/contracts/pull/1477",
+    "status":"CANNOT_HANDLE_UNDER_CURRENT_AUTHORITY",
+    "worker_result_hash":"ac3380c2969cfd55900613ae50331e6b3b3eff9a07a8178da01d9ef6359a6a47"
+  },
+  "no_bid_claim_submission_outreach":true,
+  "observed_at":"2026-08-18T09:42:42Z",
+  "relayer_profitability_used_as_worker_economics":false,
+  "status":"PASS",
+  "third_party_remote_mutation":false
+}

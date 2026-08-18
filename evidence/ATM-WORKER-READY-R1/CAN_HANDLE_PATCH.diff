@@ -1,0 +1,7 @@
+--- a/event_manager.py
++++ b/event_manager.py
+@@ -4,3 +4,4 @@
+ 
+     def add(self, event):
+         self.events.append(event)
++        self.events = self.events[-128:]

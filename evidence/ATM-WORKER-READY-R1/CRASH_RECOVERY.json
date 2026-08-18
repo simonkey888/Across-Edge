@@ -1,0 +1,8 @@
+{
+  "cases": [
+    {"crash_point":"after_ack","deduplicated_external_reads":2,"durable_receipts":13,"first_exit":91,"recovery_exit":0,"status":"PASS","target_mutation_count":1,"terminal_artifacts":3},
+    {"crash_point":"during_rpc","deduplicated_external_reads":2,"durable_receipts":13,"first_exit":91,"recovery_exit":0,"status":"PASS","target_mutation_count":1,"terminal_artifacts":3},
+    {"crash_point":"after_artifact","deduplicated_external_reads":2,"durable_receipts":13,"first_exit":91,"recovery_exit":0,"status":"PASS","target_mutation_count":1,"terminal_artifacts":3}
+  ],
+  "status":"PASS"
+}

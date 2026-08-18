@@ -1,0 +1,18 @@
+{
+  "claim_authority":0,
+  "entrypoint":"across-edge-worker run --job <json> --state-dir <dir> --output-dir <dir>",
+  "external_protocol_mutation_authority":0,
+  "financial_authority":0,
+  "max_spend_usd":0,
+  "model_authority":0,
+  "private_keys":0,
+  "protocol_interactions":"READ_ONLY",
+  "required_input_binding":["job_id","canonical_opportunity_id","worker_id","work_lease_id","scope_hash","frozen_acceptance_criteria","target_repository","target_base_sha","allowed_paths","required_capabilities","structured_requirements","expected_deliverable","deterministic_checks","allowed_chain_ids","allowed_read_endpoints","max_spend_usd"],
+  "schema_version":"across-edge-worker/v1",
+  "signing":0,
+  "submission_authority":0,
+  "transaction_broadcast":0,
+  "worker_id":"across-edge",
+  "worker_version":"1.0.0",
+  "write_rpc":0
+}

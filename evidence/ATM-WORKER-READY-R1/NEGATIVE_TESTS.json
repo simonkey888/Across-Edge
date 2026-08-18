@@ -1,0 +1,9 @@
+{
+  "external_mutation_refusal":"PASS",
+  "hostile_path_symlink_hook_environment_rpc_tests":"PASS",
+  "status":"PASS",
+  "tampered_result_claim_test":"PASS",
+  "test_command":"PYTHONPATH=src:tests python -m unittest discover -s tests -v",
+  "unsigned_signed_material_negative_test":"PASS",
+  "worker_scope_lease_spend_chain_endpoint_negative_tests":"PASS"
+}

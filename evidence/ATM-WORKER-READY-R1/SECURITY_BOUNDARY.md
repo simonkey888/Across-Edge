@@ -1,0 +1,3 @@
+# Security boundary
+
+Targets/instructions/RPC are untrusted. Scope/lease/source binding precedes work; path traversal/symlinks are rejected; hooks disabled; target .env is not loaded; arbitrary target commands are not accepted; ambient credential env is scrubbed. Canonical project is hash-checked before/after. RPC is exact HTTPS/read-only allowlist with redirect/host/chain/block provenance rejection. Unsigned tx is data only. External mutation returns CANNOT_HANDLE_UNDER_CURRENT_AUTHORITY. Cancellation kills process groups; artifacts are secret-scanned. Authority/spend/keys/signing/broadcast/write-RPC all zero.
