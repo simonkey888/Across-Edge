@@ -1,0 +1,30 @@
+{
+  "order": "004",
+  "source_head": "615a0d07b6c61a3cb26eafa04e602e004894facc",
+  "upstream_pin": "741ca9f7d72923f7b13c1c2462ca90eba81e1a87",
+  "branch": "order-001-shadow-relayer",
+  "pr": 2,
+  "pr_state": "OPEN_DRAFT",
+  "main_head": "044d195f134178b6127af5dd3f5ad7d660d32e54",
+  "main_unchanged": true,
+  "merge": false,
+  "authorized_spend_usd": 0,
+  "private_keys_used": 0,
+  "transactions_broadcast": 0,
+  "onchain_value_transfer": 0,
+  "structural_corrections": {
+    "secret_boundary": "IMPLEMENTED_STATIC_FAIL_CLOSED",
+    "evaluation_trace_integrity": "IMPLEMENTED_WITH_IMMUTABLE_ATTEMPT_HISTORY",
+    "speedup_version_integrity": "IMPLEMENTED_CONSERVATIVE_UNKNOWN_PROVENANCE",
+    "cross_run_reorg_integrity": "IMPLEMENTED_RUN_SCOPED",
+    "reorg_counter_equivalence": "IMPLEMENTED_CANONICAL_DERIVED_COUNTERS",
+    "run_isolation": "IMPLEMENTED_EXPLICIT_RUN_MEMBERSHIP",
+    "economics_reporting": "IMPLEMENTED_PARTIAL_WHERE_REBALANCE_UNKNOWN"
+  },
+  "fresh_test_execution": "BLOCKED_BY_EXECUTION_ENVIRONMENT",
+  "fresh_test_artifact": false,
+  "ci": "NOT_RUN_COST_GUARD",
+  "network": "BLOCKED_VALID_DNS",
+  "upstream_runtime": "NOT_EXECUTED",
+  "status": "IMPLEMENTATION_CHECKPOINT_NOT_FINAL_AUD_PASS"
+}

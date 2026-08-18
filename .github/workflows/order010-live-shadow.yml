@@ -1,0 +1,185 @@
+name: order010-live-shadow
+
+on:
+  push:
+    branches: [order-001-shadow-relayer]
+    paths:
+      - '.github/workflows/order010-live-shadow.yml'
+      - '.runtime/order010-trigger.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: order010-live-shadow
+  cancel-in-progress: false
+
+jobs:
+  live-shadow:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    steps:
+      - name: Checkout exact branch HEAD
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Runtime identity
+        run: |
+          set -euo pipefail
+          echo "HEAD=$(git rev-parse HEAD)"
+          echo "BRANCH=${GITHUB_REF_NAME}"
+          echo "RUN_ID=${GITHUB_RUN_ID}"
+          echo "STARTED_UTC=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.0'
+
+      - name: Install local requirements
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y redis-server
+          python -m pip install --disable-pip-version-check -e . pytest
+          corepack enable
+
+      - name: Verify Across-Edge safety gates
+        run: |
+          set -euo pipefail
+          python -m pytest -q
+          python -m compileall -q src scripts
+          python scripts/secret_scan.py
+          PYTHONPATH=src python -m across_edge.cli safety-check
+
+      - name: Prepare pinned upstream
+        run: |
+          set -euo pipefail
+          PIN=$(python -c 'import json;print(json.load(open("config/upstream-pin.json"))["sha"])')
+          PATCH=$(python -c 'import json;print(json.load(open("config/upstream-pin.json"))["instrumentation_patch"])')
+          PATCH_SHA=$(python -c 'import json;print(json.load(open("config/upstream-pin.json"))["instrumentation_patch_sha256"])')
+          test "$PIN" = '741ca9f7d72923f7b13c1c2462ca90eba81e1a87'
+          test "$(sha256sum "$PATCH" | awk '{print $1}')" = "$PATCH_SHA"
+          git clone --filter=blob:none https://github.com/across-protocol/relayer.git upstream-relayer
+          git -C upstream-relayer fetch --depth 1 origin "$PIN"
+          git -C upstream-relayer checkout --detach "$PIN"
+          git -C upstream-relayer apply --check "$GITHUB_WORKSPACE/$PATCH"
+          git -C upstream-relayer apply "$GITHUB_WORKSPACE/$PATCH"
+          git -C upstream-relayer diff --check
+
+      - name: Build pinned upstream
+        working-directory: upstream-relayer
+        run: |
+          set -euo pipefail
+          yarn install --frozen-lockfile
+          yarn typecheck:fast
+          yarn build
+
+      - name: Run supervised live zero-write shadow
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence/ORDER010_ACTIONS
+          HEAD=$(git rev-parse HEAD)
+          DEADLINE=$(( $(date +%s) + 19800 ))
+          ATTEMPT=0
+          SHADOW_PID=""
+
+          cleanup() {
+            if [ -n "${SHADOW_PID:-}" ] && kill -0 "$SHADOW_PID" 2>/dev/null; then
+              kill -TERM "$SHADOW_PID" 2>/dev/null || true
+              for _ in $(seq 1 20); do
+                kill -0 "$SHADOW_PID" 2>/dev/null || break
+                sleep 1
+              done
+              kill -KILL "$SHADOW_PID" 2>/dev/null || true
+              wait "$SHADOW_PID" 2>/dev/null || true
+            fi
+          }
+          trap cleanup EXIT TERM INT
+
+          while [ "$(date +%s)" -lt "$DEADLINE" ]; do
+            ATTEMPT=$((ATTEMPT + 1))
+            RUN_ID="order010-actions-${GITHUB_RUN_ID}-${ATTEMPT}"
+            DB="$GITHUB_WORKSPACE/evidence/ORDER010_ACTIONS/shadow-${ATTEMPT}.sqlite"
+            OUT="$GITHUB_WORKSPACE/evidence/ORDER010_ACTIONS/live-${ATTEMPT}"
+            rm -f evidence/ORDER010_FINAL/heartbeat.json
+            echo "SHADOW_ATTEMPT_START attempt=$ATTEMPT run_id=$RUN_ID utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+            python scripts/shadow_run.py "$GITHUB_WORKSPACE/upstream-relayer" \
+              --source-head "$HEAD" \
+              --run-id "$RUN_ID" \
+              --duration 0 \
+              --polling-delay 5 \
+              --observer-interval 2 \
+              --export-interval 30 \
+              --db "$DB" \
+              --out "$OUT" &
+            SHADOW_PID=$!
+            ATTEMPT_STARTED=$(date +%s)
+            RESTART_REASON="child_exit"
+
+            while kill -0 "$SHADOW_PID" 2>/dev/null && [ "$(date +%s)" -lt "$DEADLINE" ]; do
+              sleep 30
+              NOW=$(date +%s)
+              if [ -f evidence/ORDER010_FINAL/heartbeat.json ]; then
+                set +e
+                python -c "import json,sys; from datetime import datetime,timezone; from pathlib import Path; d=json.loads(Path('evidence/ORDER010_FINAL/heartbeat.json').read_text()); t=datetime.fromisoformat(d['last_heartbeat_utc'].replace('Z','+00:00')); age=(datetime.now(timezone.utc)-t).total_seconds(); ks=['last_heartbeat_utc','qualification_runtime_seconds','relayer_alive','observer_arbitrum_alive','observer_base_alive','observer_cycles','relayer_restarts','relayer_init_complete','relayer_loops_completed','deposits_observed','fills_observed','decode_gaps','send_relays','send_transactions','wallet','spend_usd','last_error']; print('HEARTBEAT '+json.dumps({k:d.get(k) for k in ks},sort_keys=True)); healthy=age<=120 and d.get('relayer_alive') and d.get('observer_arbitrum_alive') and d.get('observer_base_alive') and d.get('send_relays') is False and d.get('send_transactions') is False and d.get('wallet')=='void' and d.get('spend_usd')==0; qualified=healthy and int(d.get('qualification_runtime_seconds') or 0)>=1800; Path('evidence/ORDER010_ACTIONS/qualified.flag').touch() if qualified else None; sys.exit(0 if age<=180 else 42)"
+                HB_RC=$?
+                set -e
+                if [ "$HB_RC" -eq 42 ]; then
+                  RESTART_REASON="stale_heartbeat"
+                  echo "SHADOW_STALE_HEARTBEAT attempt=$ATTEMPT utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+                  break
+                elif [ "$HB_RC" -ne 0 ]; then
+                  RESTART_REASON="heartbeat_parse_error"
+                  break
+                fi
+              elif [ $((NOW - ATTEMPT_STARTED)) -gt 240 ]; then
+                RESTART_REASON="heartbeat_missing"
+                echo "SHADOW_HEARTBEAT_MISSING attempt=$ATTEMPT"
+                break
+              fi
+            done
+
+            if [ "$(date +%s)" -ge "$DEADLINE" ]; then
+              cleanup
+              SHADOW_PID=""
+              break
+            fi
+
+            if kill -0 "$SHADOW_PID" 2>/dev/null; then
+              cleanup
+            else
+              set +e
+              wait "$SHADOW_PID"
+              CHILD_RC=$?
+              set -e
+              echo "SHADOW_CHILD_EXIT attempt=$ATTEMPT rc=$CHILD_RC"
+            fi
+            SHADOW_PID=""
+            echo "SHADOW_RESTART reason=$RESTART_REASON attempt=$ATTEMPT"
+            sleep 5
+          done
+
+          test -f evidence/ORDER010_ACTIONS/qualified.flag
+          echo "ORDER010_ACTIONS_QUALIFIED=YES"
+
+      - name: Upload runtime evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: order010-live-${{ github.run_id }}
+          path: |
+            evidence/ORDER010_ACTIONS/
+            evidence/ORDER010_FINAL/heartbeat.json
+            evidence/ORDER010_FINAL/activation.log
+          if-no-files-found: warn
+          retention-days: 7

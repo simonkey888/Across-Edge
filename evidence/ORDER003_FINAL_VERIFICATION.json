@@ -1,0 +1,27 @@
+{
+  "ci": "PREPARED_NOT_RUN_WITH_COST_GUARD",
+  "commands": {
+    "benchmark": "python scripts/benchmark_coordinator.py --records 5000 --samples 1000 --out evidence/order003-final/coordinator_benchmark.json",
+    "compileall": "python -m compileall -q src scripts",
+    "pytest": "python -m pytest -q --junitxml=evidence/order003-final/pytest.xml",
+    "safety": "PYTHONPATH=src python -m across_edge.cli safety-check",
+    "secret_scan": "python scripts/secret_scan.py",
+    "upstream_probe": "timeout 10 git ls-remote https://github.com/across-protocol/relayer.git 741ca9f7d72923f7b13c1c2462ca90eba81e1a87"
+  },
+  "end_utc": "2026-08-10T07:22:16.149832Z",
+  "order": "003",
+  "patch_sha256": "ef2257a5b0b9af65f07129af277d063c36742cda9297ed0cd300ff29cfa6b974",
+  "platform": "Linux-6.18.35-x86_64-with-glibc2.41",
+  "python": "3.13.5 (main, Jul 15 2026, 20:25:40) [GCC 14.2.0]",
+  "results": {
+    "benchmark_exit_code": 0,
+    "compileall_exit_code": 0,
+    "network_probe_exit_code": 0,
+    "pytest": {"errors": 0, "exit_code": 0, "failures": 0, "skipped": 0, "tests": 59},
+    "safety_exit_code": 0,
+    "secret_scan_exit_code": 0,
+    "upstream_lsremote_exit_code": 128
+  },
+  "source_head": "c9c446d20a786b4066ffa1f473259d484cbab696",
+  "start_utc": "2026-08-10T07:21:44Z"
+}

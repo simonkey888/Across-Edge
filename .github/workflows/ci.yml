@@ -1,0 +1,19 @@
+name: order-002-ci
+# Manual only: private-repository Actions cost is not assumed zero.
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --no-deps -e . pytest
+      - run: python -m pytest
+      - run: python scripts/secret_scan.py
+      - run: PYTHONPATH=src python -m across_edge.cli safety-check
+      - run: git apply --numstat patches/across-relayer-order002-instrumentation.patch

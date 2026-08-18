@@ -1,0 +1,42 @@
+{
+  "order": "004-CORRECTIVE-CLOSURE",
+  "status": "PARTIAL_BLOCKED_VALID",
+  "source_head_sha": "5f5080b388246de26f74850565801b8f634ead14",
+  "evidence_generated_from_checkpoint": "039ddb0155a523ef370d1b2738d7a0d77bdd7e2c",
+  "generated_at": "2026-08-10T10:30:00Z",
+  "main_sha": "044d195f134178b6127af5dd3f5ad7d660d32e54",
+  "pr": {"number": 2, "state": "open", "draft": true, "merged": false},
+  "upstream_pin": "741ca9f7d72923f7b13c1c2462ca90eba81e1a87",
+  "schema_version": 4,
+  "upstream_event_version": 3,
+  "checks": {
+    "REMOTE_HEAD_RECONCILED": "PASS",
+    "SCHEMA_VERSION_CONSISTENCY": "PASS_STATIC",
+    "SECRET_BOUNDARY": "IMPLEMENTED_ADVERSARIAL_TEST_PRESENT_NOT_EXECUTED",
+    "EVALUATION_TRACE_INTEGRITY": "IMPLEMENTED_ADVERSARIAL_TEST_PRESENT_NOT_EXECUTED",
+    "SPEEDUP_VERSION_INTEGRITY": "IMPLEMENTED_WITH_PINNED_PROVENANCE_NOT_EXECUTED",
+    "CROSS_RUN_REORG_INTEGRITY": "IMPLEMENTED_ADVERSARIAL_TEST_PRESENT_NOT_EXECUTED",
+    "RUN_DATA_IMMUTABILITY": "IMPLEMENTED_ADVERSARIAL_TEST_PRESENT_NOT_EXECUTED",
+    "CROSS_RUN_REORG_SNAPSHOT": "IMPLEMENTED_ADVERSARIAL_TEST_PRESENT_NOT_EXECUTED",
+    "REORG_COUNTER_EQUIVALENCE": "IMPLEMENTED_ADVERSARIAL_TEST_PRESENT_NOT_EXECUTED",
+    "RUN_ISOLATION": "IMPLEMENTED_ADVERSARIAL_TEST_PRESENT_NOT_EXECUTED",
+    "ECONOMICS_REPORTING": "IMPLEMENTED_WITH_EXPLICIT_REBALANCE_UNKNOWN_NOT_EXECUTED",
+    "TESTS": "BLOCKED_VALID",
+    "TEST_ARTIFACT_FRESH": "NO_EXECUTION_ARTIFACT",
+    "REAL_NETWORK": "BLOCKED_VALID",
+    "ZERO_SPEND": "PASS_STATIC",
+    "SECRET_SCAN": "NOT_EXECUTED",
+    "LIVE_EXECUTION_LOCK": "PASS_STATIC",
+    "ZERO_WRITE_RPC": "PASS_STATIC",
+    "ZERO_SPEND_PROOF": "PASS_STATIC"
+  },
+  "test": {
+    "command": "python -m pytest -q --junitxml=evidence/order004-corrective/pytest.xml",
+    "test_head_sha": "5f5080b388246de26f74850565801b8f634ead14",
+    "result": "BLOCKED_VALID",
+    "exit_code": 128,
+    "blocker": "repository is not mounted locally; github.com DNS resolution fails: Could not resolve host: github.com"
+  },
+  "known_limitations": ["fresh pytest not executed","compileall not executed","safety CLI not executed","secret scan not executed","pinned upstream runtime not executed","real network shadow sample unavailable"],
+  "safety": {"private_keys": 0, "transactions": 0, "onchain_value_transfer": 0, "spend_usd": 0, "merge": "NO", "main_unchanged": true}
+}

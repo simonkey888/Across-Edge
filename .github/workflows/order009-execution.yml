@@ -1,0 +1,195 @@
+name: order-009-execution
+
+on:
+  push:
+    branches: [order-001-shadow-relayer]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  end-to-end-verification:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout exact HEAD
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Record execution identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence/ORDER009_FINAL/shadow
+          {
+            echo "HEAD_SHA=$(git rev-parse HEAD)"
+            echo "BRANCH=${GITHUB_REF_NAME}"
+            echo "RUN_ID=${GITHUB_RUN_ID}"
+            echo "RUN_ATTEMPT=${GITHUB_RUN_ATTEMPT}"
+            echo "TIMESTAMP_UTC=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "OS=$(uname -s)"
+            echo "ARCH=$(uname -m)"
+            echo "PYTHON_VERSION=$(python3 --version 2>&1)"
+            echo "NODE_VERSION=$(node --version 2>&1)"
+          } > evidence/ORDER009_FINAL/execution_environment.txt
+
+      - name: Install Across-Edge test dependencies
+        run: |
+          set -euo pipefail
+          python3 -m pip install --upgrade pip
+          python3 -m pip install --no-deps -e . pytest
+
+      - name: Across-Edge full test suite
+        run: python3 -m pytest -q --junitxml=evidence/ORDER009_FINAL/pytest.xml
+
+      - name: Across-Edge compileall
+        run: python3 -m compileall -q src scripts
+
+      - name: Secret scan
+        run: python3 scripts/secret_scan.py > evidence/ORDER009_FINAL/secret_scan.txt
+
+      - name: Safety runtime gate
+        run: PYTHONPATH=src python3 -m across_edge.cli safety-check > evidence/ORDER009_FINAL/safety_check.txt
+
+      - name: Verify final patch binding and acquire exact upstream
+        shell: bash
+        run: |
+          set -euo pipefail
+          PIN=$(python3 -c 'import json; print(json.load(open("config/upstream-pin.json"))["sha"])')
+          DECLARED_PATCH_SHA=$(python3 -c 'import json; print(json.load(open("config/upstream-pin.json"))["instrumentation_patch_sha256"])')
+          ACTUAL_PATCH_SHA=$(sha256sum patches/across-relayer-order003-instrumentation.patch | awk '{print $1}')
+          test "$PIN" = "741ca9f7d72923f7b13c1c2462ca90eba81e1a87"
+          test "$DECLARED_PATCH_SHA" = "$ACTUAL_PATCH_SHA"
+          git clone --filter=blob:none https://github.com/across-protocol/relayer.git upstream-relayer
+          git -C upstream-relayer fetch --depth 1 origin "$PIN"
+          git -C upstream-relayer checkout --detach "$PIN"
+          test "$(git -C upstream-relayer rev-parse HEAD)" = "$PIN"
+          {
+            echo "UPSTREAM_PIN=$PIN"
+            echo "PATCH_SHA256=$ACTUAL_PATCH_SHA"
+            echo "UPSTREAM_HEAD=$(git -C upstream-relayer rev-parse HEAD)"
+          } > evidence/ORDER009_FINAL/upstream.txt
+
+      - name: Install exact upstream dependencies
+        working-directory: upstream-relayer
+        run: |
+          set -euo pipefail
+          corepack enable
+          yarn install --immutable
+
+      - name: Baseline upstream typecheck
+        working-directory: upstream-relayer
+        run: yarn typecheck:fast
+
+      - name: Apply canonical Across-Edge patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git -C upstream-relayer apply --check "$GITHUB_WORKSPACE/patches/across-relayer-order003-instrumentation.patch"
+          git -C upstream-relayer apply "$GITHUB_WORKSPACE/patches/across-relayer-order003-instrumentation.patch"
+          git -C upstream-relayer diff --check
+          echo "PATCH_APPLY=PASS" >> evidence/ORDER009_FINAL/upstream.txt
+          git -C upstream-relayer diff --stat > evidence/ORDER009_FINAL/upstream_patch_stat.txt
+
+      - name: Patched upstream fast typecheck
+        working-directory: upstream-relayer
+        run: yarn typecheck:fast
+
+      - name: Patched upstream standard typecheck
+        working-directory: upstream-relayer
+        run: yarn typecheck
+
+      - name: Patched upstream build
+        working-directory: upstream-relayer
+        run: yarn build
+
+      - name: Relevant patched upstream runtime regressions
+        working-directory: upstream-relayer
+        run: yarn hardhat test test/TransactionClient.ts test/ProfitClient.ConsiderProfitability.ts
+
+      - name: Read-only RPC network gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' > evidence/ORDER009_FINAL/network.txt
+          import json, socket, ssl, time, urllib.request
+          targets = {
+              'ARBITRUM_RPC': ('arb1.arbitrum.io', 'https://arb1.arbitrum.io/rpc'),
+              'BASE_RPC': ('mainnet.base.org', 'https://mainnet.base.org'),
+          }
+          for name, (host, url) in targets.items():
+              rec = {'target': name, 'host': host, 'timestamp_utc': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}
+              try:
+                  rec['dns'] = socket.gethostbyname(host)
+                  t = time.monotonic()
+                  body = json.dumps({'jsonrpc':'2.0','id':1,'method':'eth_chainId','params':[]}).encode()
+                  req = urllib.request.Request(url, data=body, headers={'Content-Type':'application/json'})
+                  with urllib.request.urlopen(req, timeout=15, context=ssl.create_default_context()) as response:
+                      rec['http_status'] = response.status
+                      rec['latency_ms'] = round((time.monotonic() - t) * 1000, 3)
+                      rec['rpc_result'] = json.loads(response.read()).get('result')
+              except Exception as exc:
+                  rec['error'] = f'{type(exc).__name__}: {exc}'
+              print(json.dumps(rec, sort_keys=True))
+          PY
+          grep -q '"rpc_result"' evidence/ORDER009_FINAL/network.txt
+
+      - name: Read-only Arbitrum sequencer feed handshake
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' > evidence/ORDER009_FINAL/sequencer_feed.txt
+          import socket, ssl, time
+          host='arb1-feed.arbitrum.io'; port=443
+          started=time.monotonic()
+          with socket.create_connection((host,port),timeout=15) as raw:
+              with ssl.create_default_context().wrap_socket(raw,server_hostname=host) as tls:
+                  print(f'HOST={host}')
+                  print(f'TLS_VERSION={tls.version()}')
+                  print(f'CONNECT_LATENCY_MS={(time.monotonic()-started)*1000:.3f}')
+                  print('RESULT=TLS_HANDSHAKE_PASS_READ_ONLY')
+          PY
+
+      - name: Real zero-write shadow smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          timeout 150s python3 scripts/shadow_run.py ./upstream-relayer \
+            --duration 120 \
+            --polling-delay 5 \
+            --observer-interval 2 \
+            --export-interval 30 \
+            --db evidence/ORDER009_FINAL/shadow.sqlite \
+            --run-id order009-shadow \
+            --out evidence/ORDER009_FINAL/shadow \
+            > evidence/ORDER009_FINAL/shadow/stdout.txt 2>&1
+
+      - name: Final zero-write manifest
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo "SOURCE_HEAD_SHA=$(git rev-parse HEAD)"
+            echo "RUN_ID=${GITHUB_RUN_ID}"
+            echo "RUN_ATTEMPT=${GITHUB_RUN_ATTEMPT}"
+            echo "GENERATED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "AUTHORIZED_SPEND_USD=0"
+            echo "PRIVATE_KEYS_USED=0"
+            echo "SIGNING=0"
+            echo "TRANSACTIONS_BROADCAST=0"
+            echo "WRITE_RPC=0"
+            echo "ONCHAIN_VALUE_TRANSFER=0"
+            echo "LIVE_FINANCIAL_EXECUTION=0"
+          } > evidence/ORDER009_FINAL/final_manifest.txt
+
+      - name: Upload ORDER-009 evidence to GitHub
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: order009-final-${{ github.run_id }}-${{ github.run_attempt }}
+          path: evidence/ORDER009_FINAL/
+          if-no-files-found: warn
+          retention-days: 7

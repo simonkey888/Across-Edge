@@ -1,0 +1,12 @@
+{
+  "measurement": "local receive->parse->indexed lookup->sqlite upsert; Node source clock excluded",
+  "p50_us": 4764.606,
+  "p90_us": 7065.318,
+  "p99_us": 23095.809,
+  "platform": "Linux-6.18.35-x86_64-with-glibc2.41",
+  "python": "3.13.5",
+  "records": 5000,
+  "samples": 1000,
+  "source_head": "c9c446d20a786b4066ffa1f473259d484cbab696",
+  "status": "CURRENT_LOCAL_BENCHMARK"
+}

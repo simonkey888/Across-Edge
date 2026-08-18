@@ -1,0 +1,112 @@
+name: order011-oom-preflight
+
+on:
+  push:
+    branches: [order-001-shadow-relayer]
+    paths:
+      - '.github/workflows/order011-preflight.yml'
+      - 'scripts/order011_*.py'
+      - 'tests/test_order011_oom_fix.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: order011-oom-preflight
+  cancel-in-progress: true
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.0'
+      - name: Repository exact-head gates
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y redis-server
+          python -m pip install --disable-pip-version-check -e . pytest
+          python -m pytest -q
+          python -m compileall -q src scripts
+          python scripts/secret_scan.py
+          PYTHONPATH=src python -m across_edge.cli safety-check
+          corepack enable
+      - name: Prepare and instrument exact pinned upstream
+        run: |
+          set -euo pipefail
+          PIN=$(python -c 'import json;print(json.load(open("config/upstream-pin.json"))["sha"])')
+          PATCH=$(python -c 'import json;print(json.load(open("config/upstream-pin.json"))["instrumentation_patch"])')
+          PATCH_SHA=$(python -c 'import json;print(json.load(open("config/upstream-pin.json"))["instrumentation_patch_sha256"])')
+          test "$PIN" = '741ca9f7d72923f7b13c1c2462ca90eba81e1a87'
+          test "$(sha256sum "$PATCH" | awk '{print $1}')" = "$PATCH_SHA"
+          git clone --filter=blob:none https://github.com/across-protocol/relayer.git upstream-relayer
+          git -C upstream-relayer fetch --depth 1 origin "$PIN"
+          git -C upstream-relayer checkout --detach "$PIN"
+          git -C upstream-relayer apply "$GITHUB_WORKSPACE/$PATCH"
+          python scripts/order011_upstream_fix.py upstream-relayer
+          test "$(git -C upstream-relayer rev-parse HEAD)" = "$PIN"
+          grep -q 'ACROSS_EDGE_MEMORY' upstream-relayer/src/relayer/index.ts
+          git -C upstream-relayer diff --check
+      - name: Build exact pinned upstream
+        working-directory: upstream-relayer
+        run: |
+          set -euo pipefail
+          yarn install --frozen-lockfile
+          yarn typecheck:fast
+          yarn build
+      - name: Short OOM-correction smoke
+        run: |
+          set -euo pipefail
+          rm -rf evidence/ORDER010_FINAL evidence/ORDER011_PREFLIGHT evidence/ORDER011_ACTIONS
+          mkdir -p evidence/ORDER011_PREFLIGHT evidence/ORDER011_ACTIONS
+          ln -s ORDER011_PREFLIGHT evidence/ORDER010_FINAL
+          HEAD=$(git rev-parse HEAD)
+          python scripts/order011_shadow_run.py "$GITHUB_WORKSPACE/upstream-relayer" \
+            --source-head "$HEAD" \
+            --run-id "order011-preflight-${GITHUB_RUN_ID}" \
+            --duration 900 \
+            --polling-delay 5 \
+            --observer-interval 2 \
+            --export-interval 30 \
+            --db "$GITHUB_WORKSPACE/evidence/ORDER011_ACTIONS/preflight.sqlite" \
+            --out "$GITHUB_WORKSPACE/evidence/ORDER011_ACTIONS/live"
+      - name: Assert OOM correction and memory telemetry
+        if: always()
+        run: |
+          set -euo pipefail
+          test -s evidence/ORDER011_PREFLIGHT/activation.log
+          ! grep -E 'Reached heap limit|JavaScript heap out of memory' evidence/ORDER011_PREFLIGHT/activation.log
+          grep -q 'ACROSS_EDGE_MEMORY' evidence/ORDER011_PREFLIGHT/activation.log
+          grep -E -q 'maxRelayerLookBack[^0-9]+3600|"maxRelayerLookBack"[^0-9]+3600' evidence/ORDER011_PREFLIGHT/activation.log
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          h=json.loads(Path('evidence/ORDER011_PREFLIGHT/heartbeat.json').read_text())
+          assert h['send_relays'] is False and h['send_transactions'] is False and h['wallet']=='void'
+          assert h['spend_usd']==0 and h['private_keys']==0 and h['signing']==0 and h['transactions']==0
+          assert int(h['relayer_restarts']) <= 3
+          assert int(h['relayer_loops_completed']) > 0
+          print('ORDER011_SHORT_OOM_SMOKE=PASS')
+          print('RELAYER_LOOPS_COMPLETED='+str(h['relayer_loops_completed']))
+          print('RELAYER_RESTARTS='+str(h['relayer_restarts']))
+          PY
+      - name: Upload preflight evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: order011-preflight-${{ github.run_id }}
+          path: |
+            evidence/ORDER011_PREFLIGHT/
+            evidence/ORDER011_ACTIONS/
+          if-no-files-found: warn
+          retention-days: 7

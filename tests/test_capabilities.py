@@ -7,9 +7,11 @@ from helpers import make_repo
 class CapabilityTests(unittest.TestCase):
  def test_event_log_decoding(self):
   log={"topics":["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef","0x"+"0"*24+"11"*20,"0x"+"0"*24+"22"*20],"data":"0x"+f"{9:064x}","blockNumber":"0x20","blockHash":"0x"+"33"*32};self.assertEqual(decode_transfer_log(log)["value"],9)
- def test_unsigned_transaction_data_only(self):
+ def test_unsigned_transaction_data_only_and_secret_material_rejected(self):
   r=validate_unsigned_transaction({"chain_id":8453,"to":"0x"+"11"*20,"data":"0x1234","value":0},(8453,));self.assertFalse(r["executed"])
-  with self.assertRaisesRegex(ValueError,"signed_transaction_material_forbidden"):validate_unsigned_transaction({"chain_id":8453,"to":"0x"+"11"*20,"data":"0x","value":0,"signature":"x"},(8453,))
+  for field in ("signature","private_key","privateKey","mnemonic","seed","seed_phrase"):
+   with self.subTest(field=field):
+    with self.assertRaisesRegex(ValueError,"signed_or_secret_transaction_material_forbidden"):validate_unsigned_transaction({"chain_id":8453,"to":"0x"+"11"*20,"data":"0x","value":0,field:"secret"},(8453,))
  def test_relayer_reconciliation_dedup_and_ambiguity(self):
   r=reconcile_attempts([{"deposit_id":"d","evaluation_id":"e","decision":"profitable"},{"deposit_id":"d","evaluation_id":"e","decision":"unprofitable"}]);self.assertEqual(r["deduped_count"],1);self.assertEqual(r["ambiguous_count"],1)
  def test_fee_logic_is_derived_not_realized(self):

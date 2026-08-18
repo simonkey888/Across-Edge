@@ -3,25 +3,57 @@ on:
   push:
     branches: ["worker/**"]
   pull_request:
+    branches: [order-001-shadow-relayer]
     paths: ["src/across_edge_worker/**","tests/**","scripts/**","docs/ATM_WORKER_MODE.md","evidence/ATM-WORKER-READY-R1/**","pyproject.toml","README.md",".github/workflows/worker-readiness.yml"]
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: atm-worker-ready-${{ github.ref }}
+  cancel-in-progress: true
+env:
+  FROZEN_RELAYER_HEAD: 8a70960d838880c9735fcfb405b04bca0b4f4061
 jobs:
   worker-contract:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
         with: {fetch-depth: 0}
       - uses: actions/setup-python@v5
         with: {python-version: "3.12"}
-      - run: python -m pip install -e .
-      - run: python -m compileall -q src scripts tests
-      - env: {PYTHONPATH: "src:tests"}
-        run: python -m unittest discover -s tests -v
-      - run: python scripts/worker_secret_scan.py
-      - run: python scripts/verify_worker_evidence.py
+      - name: Exact head and dual-track ancestry
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git merge-base --is-ancestor "$FROZEN_RELAYER_HEAD" "$GITHUB_SHA"
+      - run: python -m pip install --disable-pip-version-check --no-deps -e . pytest
+      - name: Full exact-head regressions
+        run: |
+          set -o pipefail
+          python -m pytest -q | tee /tmp/full-pytest.txt
+          python -m compileall -q src scripts tests
+          echo COMPILEALL=PASS > /tmp/compileall.txt
+          python scripts/secret_scan.py | tee /tmp/project-secret-scan.txt
+          PYTHONPATH=src python -m across_edge.cli safety-check | tee /tmp/project-safety.txt
+          python scripts/worker_secret_scan.py | tee /tmp/worker-secret-scan.txt
+      - name: Fresh exact-head worker evidence
+        env: {PYTHONPATH: "src:tests"}
+        run: |
+          python scripts/generate_worker_evidence.py --source-sha "$GITHUB_SHA" --pr2-head "$FROZEN_RELAYER_HEAD" --observed-at "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          cp /tmp/full-pytest.txt evidence/ATM-WORKER-READY-R1/CI_FULL_PYTEST.txt
+          cp /tmp/compileall.txt evidence/ATM-WORKER-READY-R1/CI_COMPILEALL.txt
+          cp /tmp/project-secret-scan.txt evidence/ATM-WORKER-READY-R1/CI_PROJECT_SECRET_SCAN.txt
+          cp /tmp/project-safety.txt evidence/ATM-WORKER-READY-R1/CI_PROJECT_SAFETY.txt
+          cp /tmp/worker-secret-scan.txt evidence/ATM-WORKER-READY-R1/CI_WORKER_SECRET_SCAN.txt
+          python scripts/finalize_worker_evidence.py --source-sha "$GITHUB_SHA" --pr2-head "$FROZEN_RELAYER_HEAD" --run-id "$GITHUB_RUN_ID"
+          python scripts/verify_worker_evidence.py
+      - name: Upload exact-head worker evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: atm-worker-ready-r1-${{ github.sha }}-${{ github.run_id }}
+          path: evidence/ATM-WORKER-READY-R1/
+          retention-days: 30
+          if-no-files-found: error
   rpc-readonly:
     runs-on: ubuntu-latest
     timeout-minutes: 5

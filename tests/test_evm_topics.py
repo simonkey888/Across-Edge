@@ -1,0 +1,2 @@
+from across_edge.evm import FUNDS_DEPOSITED_TOPIC0,FILLED_RELAY_TOPIC0
+def test_topics_known_lengths():assert len(FUNDS_DEPOSITED_TOPIC0)==66 and len(FILLED_RELAY_TOPIC0)==66 and FUNDS_DEPOSITED_TOPIC0!=FILLED_RELAY_TOPIC0

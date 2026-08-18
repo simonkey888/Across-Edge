@@ -1,0 +1,1 @@
+{"component": "python_coordinator_parse_persist_T0", "iterations": 1000, "p50_us": 4370.784, "p90_us": 7358.541, "p99_us": 11504.8, "upstream_typescript_emitter_overhead": "UNKNOWN_UNTIL_PINNED_UPSTREAM_BUILD_AND_RUN"}

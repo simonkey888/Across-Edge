@@ -1,0 +1,1 @@
+{"verified_at_sha":"741ca9f7d72923f7b13c1c2462ca90eba81e1a87","amendment":"001-A","priority":["REUSE_CANONICAL","WRAP_THINLY","MEASURE","EXPERIMENT_IF_JUSTIFIED","BUILD_LAST"],"simulation":"WRAP","void_signer":"REUSE","event_listener":"EXPERIMENT","profiler":"WRAP","speed_provider":"REUSE_FUTURE_NO_LIVE","inventory":"REUSE_INSPECT_ONLY"}

@@ -15,9 +15,11 @@ class ContractTests(unittest.TestCase):
  def test_wrong_worker_fails_closed(self):
   r=job_dict(self.repo,self.sha);r["worker_id"]="other"
   with self.assertRaisesRegex(ValueError,"worker_id_mismatch"):WorkerJob.from_dict(self.reb(r))
- def test_terminal_and_expired_lease_fail_closed(self):
+ def test_terminal_expired_and_nonactive_lease_fail_closed(self):
   r=job_dict(self.repo,self.sha);r["lease_status"]="CANCELLED"
   with self.assertRaisesRegex(ValueError,"terminal_lease"):WorkerJob.from_dict(self.reb(r))
+  r=job_dict(self.repo,self.sha);r["lease_status"]="PENDING"
+  with self.assertRaisesRegex(ValueError,"lease_not_active"):WorkerJob.from_dict(self.reb(r))
   r=job_dict(self.repo,self.sha);r["lease_expires_at"]=(datetime.now(timezone.utc)-timedelta(seconds=1)).isoformat()
   with self.assertRaisesRegex(ValueError,"expired_lease"):WorkerJob.from_dict(self.reb(r))
  def test_nonzero_spend_fails_closed(self):
