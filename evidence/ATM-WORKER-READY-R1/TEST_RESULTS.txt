@@ -1,11 +1,34 @@
-AUTHORITATIVE_STATUS=CI_REQUIRED
-ARQ_PRECOMMIT_SANITY_ONLY=18 worker tests passed locally in an isolated non-network tool sandbox
-AUTHORITATIVE_COMMANDS:
-python -m pytest -q tests/test_atm_worker.py
-python -m pytest -q
-python -m compileall -q src scripts
-python scripts/secret_scan.py
-PYTHONPATH=src python -m across_edge.cli safety-check
-python scripts/verify_atm_worker_evidence.py
+COMMAND=PYTHONPATH=src:tests python -m unittest discover -s tests -v
+EXIT=0
 
-Only the exact-head GitHub Actions run referenced by the final project-audit comment is authoritative.
+29 worker-readiness tests executed on source 21e23138d88541196780e6c0abbc23b3780f9e2e.
+RESULT=PASS
+TESTS=29
+FAILURES=0
+ERRORS=0
+
+Covered gates:
+- event/log decoding
+- derived fee logic without realized-profit claims
+- relayer reconciliation and ambiguity
+- idempotent local repair recovery
+- unsigned transaction validation without signing/execution
+- scope/worker/lease/spend/chain/endpoint fail-closed contracts
+- external mutation and unsupported-capability refusal
+- result authoritative/economic claim rejection
+- durable lifecycle ACK/read replay
+- process-group cancellation/no orphan
+- exact endpoint allowlist
+- credential environment scrubbing
+- git hook suppression
+- path traversal and symlink escape rejection
+- read-only RPC method boundary
+- redirect/host/chain spoof rejection
+- secret scanning
+- crash-after-ACK recovery
+- crash-after-artifact recovery without duplicate mutation
+- end-to-end isolated WorkerResult lifecycle
+
+Local exact-source execution command:
+PYTHONPATH=src:tests python3 -m unittest discover -s tests -v
+Observed terminal summary: Ran 29 tests in 3.030s; OK.

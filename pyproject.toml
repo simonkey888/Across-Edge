@@ -1,18 +1,16 @@
 [build-system]
-requires=["setuptools>=68"]
-build-backend="setuptools.build_meta"
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
 [project]
-name="across-edge"
-version="0.4.0"
-description="Zero-spend Across relayer research plus isolated read-only ATM Web3 worker"
-requires-python=">=3.11"
-license={text="MIT"}
+name = "across-edge-worker"
+version = "1.0.0"
+description = "Read-only ATM Web3 engineering worker adapter for Across-Edge"
+requires-python = ">=3.11"
+dependencies = []
+
 [project.scripts]
-across-edge="across_edge.cli:main"
-across-edge-worker="across_edge.atm_worker_cli:main"
+across-edge-worker = "across_edge_worker.cli:main"
+
 [tool.setuptools.packages.find]
-where=["src"]
-[tool.pytest.ini_options]
-pythonpath=["src"]
-testpaths=["tests"]
-addopts="-q"
+where = ["src"]

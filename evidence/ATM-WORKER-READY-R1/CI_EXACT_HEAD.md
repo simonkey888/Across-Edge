@@ -1,7 +1,3 @@
-# CI_EXACT_HEAD
+# CI exact-head contract
 
-Workflow: `.github/workflows/atm-worker-ready-r1.yml`.
-
-The authoritative run URL and exact candidate SHA are recorded in the project PR/Issue audit comment after the run completes. They are deliberately not embedded into this committed file because doing so would create a new HEAD after the run and invalidate exact-head identity.
-
-Acceptance requires the workflow to report the same `GITHUB_SHA` as the audited PR head and all gates to pass. The workflow uploads its identity/test/evidence bundle as an Actions artifact.
+Final candidate is validated by `.github/workflows/worker-readiness.yml` after the last evidence change. Required jobs: `worker-contract`, `rpc-readonly`. Exact terminal run/head are recorded in Issue #11 and dedicated worker PR without changing git.

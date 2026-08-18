@@ -1,13 +1,18 @@
 {
-  "protocol_version":"atm-worker/v1",
+  "claim_authority":0,
+  "entrypoint":"across-edge-worker run --job <json> --state-dir <dir> --output-dir <dir>",
+  "external_protocol_mutation_authority":0,
+  "financial_authority":0,
+  "max_spend_usd":0,
+  "model_authority":0,
+  "private_keys":0,
+  "protocol_interactions":"READ_ONLY",
+  "required_input_binding":["job_id","canonical_opportunity_id","worker_id","work_lease_id","scope_hash","frozen_acceptance_criteria","target_repository","target_base_sha","allowed_paths","required_capabilities","structured_requirements","expected_deliverable","deterministic_checks","allowed_chain_ids","allowed_read_endpoints","max_spend_usd"],
+  "schema_version":"across-edge-worker/v1",
+  "signing":0,
+  "submission_authority":0,
+  "transaction_broadcast":0,
   "worker_id":"across-edge",
-  "input_required":["job_id","canonical_opportunity_id","worker_id","work_lease_id","scope_hash","lease_state","lease_expires_at","frozen_acceptance_criteria","target_repository","target_base_sha","allowed_paths","required_capabilities","structured_requirements","expected_deliverable","deterministic_checks","allowed_chain_ids","allowed_read_endpoints","max_spend_usd"],
-  "binding":"scope_hash = sha256(canonical frozen scope payload)",
-  "lease_policy":"active and unexpired only",
-  "target_sha_policy":"full 40-character exact git SHA",
-  "path_policy":"explicit repository-relative allowlist; traversal and symlinks rejected",
-  "network_policy":"HTTPS endpoints explicitly bound per chain; JSON-RPC read-method allowlist only; redirects rejected",
-  "authority":{"outgoing_spend_usd":0,"financial_authority":0,"claim_authority":0,"submission_authority":0,"model_authority":0,"external_protocol_mutation_authority":0,"signing":0,"transaction_broadcast":0,"write_rpc":0},
-  "terminal_non_authority":["paid","withdrawable","realized_profit","external_accepted","executed_onchain","payout_success"],
-  "entrypoint":"across-edge-worker"
+  "worker_version":"1.0.0",
+  "write_rpc":0
 }
