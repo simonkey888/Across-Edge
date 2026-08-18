@@ -1,0 +1,310 @@
+name: order011-r1-continuous-gate
+
+on:
+  push:
+    branches: [order-001-shadow-relayer]
+    paths:
+      - '.github/workflows/order011-r1-gate.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: order011-r1-continuous-gate
+  cancel-in-progress: false
+
+env:
+  PINNED_UPSTREAM_SHA: 741ca9f7d72923f7b13c1c2462ca90eba81e1a87
+  SHADOW_SECONDS: '19200'
+  SAMPLE_SECONDS: '30'
+
+jobs:
+  lane-a:
+    name: lane-a
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - uses: actions/setup-node@v4
+        with: {node-version: '22.23.0'}
+      - name: Prepare exact-head zero-write runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y redis-server
+          python -m pip install --disable-pip-version-check -e . pytest
+          python -m pytest -q
+          python -m compileall -q src scripts
+          python scripts/secret_scan.py
+          PYTHONPATH=src python -m across_edge.cli safety-check
+          corepack enable
+          PIN=$(python -c 'import json;print(json.load(open("config/upstream-pin.json"))["sha"])')
+          PATCH=$(python -c 'import json;print(json.load(open("config/upstream-pin.json"))["instrumentation_patch"])')
+          PATCH_SHA=$(python -c 'import json;print(json.load(open("config/upstream-pin.json"))["instrumentation_patch_sha256"])')
+          test "$PIN" = "$PINNED_UPSTREAM_SHA"
+          test "$(sha256sum "$PATCH" | awk '{print $1}')" = "$PATCH_SHA"
+          git clone --filter=blob:none https://github.com/across-protocol/relayer.git upstream-relayer
+          git -C upstream-relayer fetch --depth 1 origin "$PIN"
+          git -C upstream-relayer checkout --detach "$PIN"
+          git -C upstream-relayer apply "$GITHUB_WORKSPACE/$PATCH"
+          python scripts/order011_upstream_fix.py upstream-relayer
+          test "$(git -C upstream-relayer rev-parse HEAD)" = "$PIN"
+          git -C upstream-relayer diff --check
+          (cd upstream-relayer && yarn install --frozen-lockfile && yarn typecheck:fast && yarn build)
+      - name: Run lane A and sample healthy coverage
+        shell: bash
+        run: |
+          set -euo pipefail
+          LANE=evidence/ORDER011_R1_LANE_A
+          rm -rf evidence/ORDER010_FINAL "$LANE"
+          mkdir -p evidence/ORDER010_FINAL "$LANE/live"
+          HEAD=$(git rev-parse HEAD)
+          python scripts/order011_shadow_run.py "$GITHUB_WORKSPACE/upstream-relayer" \
+            --source-head "$HEAD" --run-id "order011-r1-a-${GITHUB_RUN_ID}" \
+            --duration "$SHADOW_SECONDS" --polling-delay 5 --observer-interval 2 --export-interval 30 \
+            --db "$GITHUB_WORKSPACE/$LANE/shadow.sqlite" --out "$GITHUB_WORKSPACE/$LANE/live" &
+          PID=$!
+          LAST=""
+          set +e
+          while kill -0 "$PID" 2>/dev/null; do
+            if [ -s evidence/ORDER010_FINAL/heartbeat.json ]; then
+              python - "$LANE/history.jsonl" "$LAST" <<'PY' > "$LANE/sample.out"
+import json,sys
+from datetime import datetime,timezone
+from pathlib import Path
+h=json.loads(Path('evidence/ORDER010_FINAL/heartbeat.json').read_text())
+last=sys.argv[2]
+ts=str(h.get('last_heartbeat_utc') or '')
+if ts and ts != last:
+    h['_sampled_utc']=datetime.now(timezone.utc).isoformat().replace('+00:00','Z')
+    with Path(sys.argv[1]).open('a') as f:f.write(json.dumps(h,sort_keys=True)+'\n')
+print(ts)
+PY
+              NEW=$(tail -n1 "$LANE/sample.out" 2>/dev/null || true)
+              [ -n "$NEW" ] && LAST="$NEW"
+            fi
+            sleep "$SAMPLE_SECONDS"
+          done
+          wait "$PID"; RC=$?
+          set -e
+          cp evidence/ORDER010_FINAL/activation.log "$LANE/activation.log"
+          cp evidence/ORDER010_FINAL/heartbeat.json "$LANE/heartbeat-final.json"
+          test "$RC" -eq 0
+          ! grep -E -q 'Reached heap limit|JavaScript heap out of memory' "$LANE/activation.log"
+          grep -q '"phase": "end"' "$LANE/activation.log"
+      - name: Upload lane A
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: order011-r1-lane-a-${{ github.run_id }}
+          path: evidence/ORDER011_R1_LANE_A/
+          retention-days: 7
+          if-no-files-found: error
+
+  delay-b:
+    name: overlap-delay
+    runs-on: ubuntu-latest
+    timeout-minutes: 220
+    steps:
+      - name: Delay second lane without consuming lane B runtime budget
+        run: sleep 12600
+
+  lane-b:
+    name: lane-b
+    needs: delay-b
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - uses: actions/setup-node@v4
+        with: {node-version: '22.23.0'}
+      - name: Prepare exact-head zero-write runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y redis-server
+          python -m pip install --disable-pip-version-check -e . pytest
+          python -m pytest -q
+          python -m compileall -q src scripts
+          python scripts/secret_scan.py
+          PYTHONPATH=src python -m across_edge.cli safety-check
+          corepack enable
+          PIN=$(python -c 'import json;print(json.load(open("config/upstream-pin.json"))["sha"])')
+          PATCH=$(python -c 'import json;print(json.load(open("config/upstream-pin.json"))["instrumentation_patch"])')
+          PATCH_SHA=$(python -c 'import json;print(json.load(open("config/upstream-pin.json"))["instrumentation_patch_sha256"])')
+          test "$PIN" = "$PINNED_UPSTREAM_SHA"
+          test "$(sha256sum "$PATCH" | awk '{print $1}')" = "$PATCH_SHA"
+          git clone --filter=blob:none https://github.com/across-protocol/relayer.git upstream-relayer
+          git -C upstream-relayer fetch --depth 1 origin "$PIN"
+          git -C upstream-relayer checkout --detach "$PIN"
+          git -C upstream-relayer apply "$GITHUB_WORKSPACE/$PATCH"
+          python scripts/order011_upstream_fix.py upstream-relayer
+          test "$(git -C upstream-relayer rev-parse HEAD)" = "$PIN"
+          git -C upstream-relayer diff --check
+          (cd upstream-relayer && yarn install --frozen-lockfile && yarn typecheck:fast && yarn build)
+      - name: Run lane B and sample healthy coverage
+        shell: bash
+        run: |
+          set -euo pipefail
+          LANE=evidence/ORDER011_R1_LANE_B
+          rm -rf evidence/ORDER010_FINAL "$LANE"
+          mkdir -p evidence/ORDER010_FINAL "$LANE/live"
+          HEAD=$(git rev-parse HEAD)
+          python scripts/order011_shadow_run.py "$GITHUB_WORKSPACE/upstream-relayer" \
+            --source-head "$HEAD" --run-id "order011-r1-b-${GITHUB_RUN_ID}" \
+            --duration "$SHADOW_SECONDS" --polling-delay 5 --observer-interval 2 --export-interval 30 \
+            --db "$GITHUB_WORKSPACE/$LANE/shadow.sqlite" --out "$GITHUB_WORKSPACE/$LANE/live" &
+          PID=$!
+          LAST=""
+          set +e
+          while kill -0 "$PID" 2>/dev/null; do
+            if [ -s evidence/ORDER010_FINAL/heartbeat.json ]; then
+              python - "$LANE/history.jsonl" "$LAST" <<'PY' > "$LANE/sample.out"
+import json,sys
+from datetime import datetime,timezone
+from pathlib import Path
+h=json.loads(Path('evidence/ORDER010_FINAL/heartbeat.json').read_text())
+last=sys.argv[2]
+ts=str(h.get('last_heartbeat_utc') or '')
+if ts and ts != last:
+    h['_sampled_utc']=datetime.now(timezone.utc).isoformat().replace('+00:00','Z')
+    with Path(sys.argv[1]).open('a') as f:f.write(json.dumps(h,sort_keys=True)+'\n')
+print(ts)
+PY
+              NEW=$(tail -n1 "$LANE/sample.out" 2>/dev/null || true)
+              [ -n "$NEW" ] && LAST="$NEW"
+            fi
+            sleep "$SAMPLE_SECONDS"
+          done
+          wait "$PID"; RC=$?
+          set -e
+          cp evidence/ORDER010_FINAL/activation.log "$LANE/activation.log"
+          cp evidence/ORDER010_FINAL/heartbeat.json "$LANE/heartbeat-final.json"
+          test "$RC" -eq 0
+          ! grep -E -q 'Reached heap limit|JavaScript heap out of memory' "$LANE/activation.log"
+          grep -q '"phase": "end"' "$LANE/activation.log"
+      - name: Upload lane B
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: order011-r1-lane-b-${{ github.run_id }}
+          path: evidence/ORDER011_R1_LANE_B/
+          retention-days: 7
+          if-no-files-found: error
+
+  qualify:
+    name: qualify
+    if: always()
+    needs: [lane-a, lane-b]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: order011-r1-lane-*-${{ github.run_id }}
+          path: gathered
+      - name: Verify continuous coverage, OOM and economics
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence/ORDER011_R1_FINAL
+          python - <<'PY'
+import json,re,sys
+from datetime import datetime
+from decimal import Decimal
+from pathlib import Path
+ROOT=Path('gathered')
+OUT=Path('evidence/ORDER011_R1_FINAL'); OUT.mkdir(parents=True,exist_ok=True)
+HEAD='${{ github.sha }}'
+PIN='741ca9f7d72923f7b13c1c2462ca90eba81e1a87'
+
+def dt(s): return datetime.fromisoformat(s.replace('Z','+00:00')).timestamp()
+
+def find(name): return list(ROOT.rglob(name))
+histories=find('history.jsonl'); logs=find('activation.log'); metas=find('run-metadata.json'); records=find('shadow-records.jsonl')
+errors=[]
+if len(histories)<2: errors.append('missing_lane_history')
+if len(logs)<2: errors.append('missing_activation_log')
+oom_count=0; memory_end=[]
+for p in logs:
+    t=p.read_text(errors='replace')
+    oom_count += len(re.findall(r'Reached heap limit|JavaScript heap out of memory',t))
+    for m in re.finditer(r'"phase": "end".*?"loopCount": (\d+).*?"heapUsed": (\d+).*?"heapTotal": (\d+).*?"rss": (\d+)',t,re.S):
+        memory_end.append(tuple(map(int,m.groups())))
+if oom_count: errors.append('oom_persisted')
+if len(memory_end)<10: errors.append('insufficient_memory_end_samples')
+heap_ceiling=int(2048*1024*1024*.90)
+if memory_end and max(x[1] for x in memory_end)>=heap_ceiling: errors.append('heap_not_bounded_below_90pct_stopgap')
+
+intervals=[]; healthy_samples=0; all_samples=[]
+for hp in histories:
+    rows=[json.loads(x) for x in hp.read_text().splitlines() if x.strip()]
+    rows.sort(key=lambda x:dt(x['_sampled_utc']))
+    all_samples += rows
+    for a,b in zip(rows,rows[1:]):
+        ta,tb=dt(a['_sampled_utc']),dt(b['_sampled_utc'])
+        healthy=lambda h: (h.get('source_head')==HEAD and h.get('upstream_sha')==PIN and h.get('relayer_alive') is True and h.get('observer_arbitrum_alive') is True and h.get('observer_base_alive') is True and h.get('send_relays') is False and h.get('send_transactions') is False and h.get('wallet')=='void' and h.get('spend_usd')==0 and h.get('private_keys')==0 and h.get('signing')==0 and h.get('transactions')==0 and h.get('write_rpc')==0 and h.get('onchain_value_transfer')==0)
+        if healthy(a): healthy_samples+=1
+        if healthy(a) and healthy(b) and 0 < tb-ta <= 90: intervals.append((ta,tb))
+intervals.sort(); merged=[]
+for s,e in intervals:
+    if not merged or s>merged[-1][1]+1: merged.append([s,e])
+    else: merged[-1][1]=max(merged[-1][1],e)
+continuous=max((e-s for s,e in merged),default=0)
+if continuous < 21600: errors.append('continuous_healthy_coverage_lt_21600')
+
+fps=[]
+for p in metas:
+    try:
+        d=json.loads(p.read_text()); fps.append(d.get('config_fingerprint_sha256'))
+    except Exception: pass
+if len([x for x in fps if x])<2 or len(set(x for x in fps if x))!=1: errors.append('config_fingerprint_mismatch')
+
+best={}
+for p in records:
+    for line in p.read_text().splitlines():
+        if not line.strip(): continue
+        r=json.loads(line); econ=r.get('economics') or {}; dec=str(r.get('profitability_decision') or 'UNKNOWN')
+        net=econ.get('net_relayer_fee_usd_wei')
+        if dec in ('','UNKNOWN','None') or net in (None,'UNKNOWN'): continue
+        key=(str(r.get('deposit_key') or ''),str(r.get('deposit_version_fingerprint') or r.get('upstream_trace_id') or r.get('evaluation_attempt_id') or ''))
+        if not all(key): errors.append('economic_row_missing_dedup_identity'); continue
+        score=sum(v not in (None,'UNKNOWN','') for v in econ.values()) + sum(r.get(k) is not None for k in ('t1_monotonic_ns','t2_monotonic_ns','t3_monotonic_ns'))
+        if key not in best or score>best[key][0]: best[key]=(score,r)
+rows=[v[1] for v in best.values()]
+evals=len(rows); profitable=sum(str(r.get('profitability_decision'))=='profitable' for r in rows)
+net_ev=Decimal(0)
+for r in rows: net_ev += Decimal(str((r.get('economics') or {})['net_relayer_fee_usd_wei']))/Decimal(10**18)
+
+if 'oom_persisted' in errors: status='STOP_ROUTE'
+elif any(e in errors for e in ('continuous_healthy_coverage_lt_21600','missing_lane_history','missing_activation_log','config_fingerprint_mismatch')): status='BLOCKED_REAL'
+elif evals < 10: status='STOP_ROUTE'
+elif profitable>=2 and net_ev>0: status='GO_FOR_BOUNDED_LIVE_DESIGN'
+elif evals>=20 and profitable==0: status='STOP_ROUTE'
+else: status='BLOCKED_REAL'
+
+payload={'order':'ORDER-011-R1','status':status,'source_head':HEAD,'upstream_pin':PIN,'continuous_healthy_coverage_seconds':continuous,'oom_count':oom_count,'memory_end_samples':len(memory_end),'max_heap_used_bytes':max((x[1] for x in memory_end),default=None),'healthy_samples':healthy_samples,'economic_evaluations_deduped':evals,'profitable_count':profitable,'aggregate_net_ev_usd':str(net_ev),'config_fingerprints':fps,'errors':sorted(set(errors)),'safety':{'authorized_spend_usd':0,'authorized_capital_at_risk_usd':0,'private_keys':0,'signing':0,'transaction_broadcast':0,'onchain_value_transfer':0,'write_rpc':0,'wallet':'void','send_relays':False,'send_transactions':False}}
+(OUT/'ORDER011_R1_FINAL.json').write_text(json.dumps(payload,indent=2,sort_keys=True)+'\n')
+print(json.dumps(payload,indent=2,sort_keys=True))
+(OUT/'terminal.txt').write_text('ORDER_011_R1_STATUS='+status+'\n')
+if status=='BLOCKED_REAL': sys.exit(2)
+PY
+      - name: Upload terminal R1 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: order011-r1-final-${{ github.run_id }}
+          path: evidence/ORDER011_R1_FINAL/
+          retention-days: 30
+          if-no-files-found: error
