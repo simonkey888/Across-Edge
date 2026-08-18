@@ -1,0 +1,41 @@
+{
+  "order": "005",
+  "status": "PARTIAL_BLOCKED_VALID",
+  "repository": "simonkey888/Across-Edge",
+  "branch": "order-001-shadow-relayer",
+  "remote_head_sha_at_audit": "0d7f87b32b0078efb000f36eb6ade54f500c313b",
+  "source_head_sha": "5f5080b388246de26f74850565801b8f634ead14",
+  "pr_number": 2,
+  "pr_head_sha": "0d7f87b32b0078efb000f36eb6ade54f500c313b",
+  "main_sha": "044d195f134178b6127af5dd3f5ad7d660d32e54",
+  "main_unchanged": true,
+  "pr_draft": true,
+  "merged": false,
+  "upstream_pin": "741ca9f7d72923f7b13c1c2462ca90eba81e1a87",
+  "upstream_pin_changed": false,
+  "generated_at_utc": "2026-08-10T12:07:39Z",
+  "execution": {
+    "fresh_test_execution": "BLOCKED_VALID",
+    "test_command": "python -m pytest -q --junitxml=evidence/order005-final/pytest.xml",
+    "test_count": "NOT_EXECUTED",
+    "compileall": "BLOCKED_VALID",
+    "safety_execution": "BLOCKED_VALID",
+    "secret_scan": "BLOCKED_VALID",
+    "upstream_runtime": "BLOCKED_VALID",
+    "real_network": "BLOCKED_VALID"
+  },
+  "blocker": {
+    "stage": "repository_acquisition",
+    "local_checkout": "NOT_AVAILABLE",
+    "attempt": "git clone https://github.com/simonkey888/Across-Edge.git",
+    "exit_code": 128,
+    "error": "Could not resolve host: github.com",
+    "environment": "execution sandbox DNS/network resolution failure"
+  },
+  "ci": {
+    "workflow_runs_for_pr_head": 0,
+    "existing_workflow": "manual workflow_dispatch only",
+    "paid_ci_started": false
+  },
+  "provenance": "BLOCKED_VALID; no execution PASS is claimed; ORDER-003/ORDER-004 historical execution artifacts are not reused"
+}

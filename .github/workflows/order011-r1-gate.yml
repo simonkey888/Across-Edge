@@ -1,0 +1,214 @@
+name: order011-r1-continuous-gate
+
+on:
+  push:
+    branches: [order-001-shadow-relayer]
+    paths:
+      - '.github/workflows/order011-r1-gate.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: order011-r1-continuous-gate
+  cancel-in-progress: false
+
+env:
+  PINNED_UPSTREAM_SHA: 741ca9f7d72923f7b13c1c2462ca90eba81e1a87
+  SHADOW_SECONDS: '19200'
+  SAMPLE_SECONDS: '30'
+
+jobs:
+  lane-a:
+    name: lane-a
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.0'
+      - name: Prepare exact-head zero-write runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y redis-server
+          python -m pip install --disable-pip-version-check -e . pytest
+          python -m pytest -q
+          python -m compileall -q src scripts
+          python scripts/secret_scan.py
+          PYTHONPATH=src python -m across_edge.cli safety-check
+          corepack enable
+          PIN=$(python -c 'import json;print(json.load(open("config/upstream-pin.json"))["sha"])')
+          PATCH=$(python -c 'import json;print(json.load(open("config/upstream-pin.json"))["instrumentation_patch"])')
+          PATCH_SHA=$(python -c 'import json;print(json.load(open("config/upstream-pin.json"))["instrumentation_patch_sha256"])')
+          test "$PIN" = "$PINNED_UPSTREAM_SHA"
+          test "$(sha256sum "$PATCH" | awk '{print $1}')" = "$PATCH_SHA"
+          git clone --filter=blob:none https://github.com/across-protocol/relayer.git upstream-relayer
+          git -C upstream-relayer fetch --depth 1 origin "$PIN"
+          git -C upstream-relayer checkout --detach "$PIN"
+          git -C upstream-relayer apply "$GITHUB_WORKSPACE/$PATCH"
+          python scripts/order011_upstream_fix.py upstream-relayer
+          test "$(git -C upstream-relayer rev-parse HEAD)" = "$PIN"
+          git -C upstream-relayer diff --check
+          (cd upstream-relayer && yarn install --frozen-lockfile && yarn typecheck:fast && yarn build)
+      - name: Run lane A and sample healthy coverage
+        shell: bash
+        run: |
+          set -euo pipefail
+          LANE=evidence/ORDER011_R1_LANE_A
+          rm -rf evidence/ORDER010_FINAL "$LANE"
+          mkdir -p evidence/ORDER010_FINAL "$LANE/live"
+          HEAD=$(git rev-parse HEAD)
+          python scripts/order011_shadow_run.py "$GITHUB_WORKSPACE/upstream-relayer" \
+            --source-head "$HEAD" --run-id "order011-r1-a-${GITHUB_RUN_ID}" \
+            --duration "$SHADOW_SECONDS" --polling-delay 5 --observer-interval 2 --export-interval 30 \
+            --db "$GITHUB_WORKSPACE/$LANE/shadow.sqlite" --out "$GITHUB_WORKSPACE/$LANE/live" &
+          PID=$!
+          set +e
+          while kill -0 "$PID" 2>/dev/null; do
+            python scripts/r1_gate.py sample \
+              --heartbeat evidence/ORDER010_FINAL/heartbeat.json \
+              --history "$LANE/history.jsonl" \
+              --state "$LANE/sample.state"
+            sleep "$SAMPLE_SECONDS"
+          done
+          wait "$PID"; RC=$?
+          set -e
+          cp evidence/ORDER010_FINAL/activation.log "$LANE/activation.log"
+          cp evidence/ORDER010_FINAL/heartbeat.json "$LANE/heartbeat-final.json"
+          test "$RC" -eq 0
+          ! grep -E -q 'Reached heap limit|JavaScript heap out of memory' "$LANE/activation.log"
+          grep -q '"phase": "end"' "$LANE/activation.log"
+      - name: Upload lane A
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: order011-r1-lane-a-${{ github.run_id }}
+          path: evidence/ORDER011_R1_LANE_A/
+          retention-days: 7
+          if-no-files-found: error
+
+  delay-b:
+    name: overlap-delay
+    runs-on: ubuntu-latest
+    timeout-minutes: 220
+    steps:
+      - name: Delay second lane without consuming lane B runtime budget
+        run: sleep 12600
+
+  lane-b:
+    name: lane-b
+    needs: delay-b
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.0'
+      - name: Prepare exact-head zero-write runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y redis-server
+          python -m pip install --disable-pip-version-check -e . pytest
+          python -m pytest -q
+          python -m compileall -q src scripts
+          python scripts/secret_scan.py
+          PYTHONPATH=src python -m across_edge.cli safety-check
+          corepack enable
+          PIN=$(python -c 'import json;print(json.load(open("config/upstream-pin.json"))["sha"])')
+          PATCH=$(python -c 'import json;print(json.load(open("config/upstream-pin.json"))["instrumentation_patch"])')
+          PATCH_SHA=$(python -c 'import json;print(json.load(open("config/upstream-pin.json"))["instrumentation_patch_sha256"])')
+          test "$PIN" = "$PINNED_UPSTREAM_SHA"
+          test "$(sha256sum "$PATCH" | awk '{print $1}')" = "$PATCH_SHA"
+          git clone --filter=blob:none https://github.com/across-protocol/relayer.git upstream-relayer
+          git -C upstream-relayer fetch --depth 1 origin "$PIN"
+          git -C upstream-relayer checkout --detach "$PIN"
+          git -C upstream-relayer apply "$GITHUB_WORKSPACE/$PATCH"
+          python scripts/order011_upstream_fix.py upstream-relayer
+          test "$(git -C upstream-relayer rev-parse HEAD)" = "$PIN"
+          git -C upstream-relayer diff --check
+          (cd upstream-relayer && yarn install --frozen-lockfile && yarn typecheck:fast && yarn build)
+      - name: Run lane B and sample healthy coverage
+        shell: bash
+        run: |
+          set -euo pipefail
+          LANE=evidence/ORDER011_R1_LANE_B
+          rm -rf evidence/ORDER010_FINAL "$LANE"
+          mkdir -p evidence/ORDER010_FINAL "$LANE/live"
+          HEAD=$(git rev-parse HEAD)
+          python scripts/order011_shadow_run.py "$GITHUB_WORKSPACE/upstream-relayer" \
+            --source-head "$HEAD" --run-id "order011-r1-b-${GITHUB_RUN_ID}" \
+            --duration "$SHADOW_SECONDS" --polling-delay 5 --observer-interval 2 --export-interval 30 \
+            --db "$GITHUB_WORKSPACE/$LANE/shadow.sqlite" --out "$GITHUB_WORKSPACE/$LANE/live" &
+          PID=$!
+          set +e
+          while kill -0 "$PID" 2>/dev/null; do
+            python scripts/r1_gate.py sample \
+              --heartbeat evidence/ORDER010_FINAL/heartbeat.json \
+              --history "$LANE/history.jsonl" \
+              --state "$LANE/sample.state"
+            sleep "$SAMPLE_SECONDS"
+          done
+          wait "$PID"; RC=$?
+          set -e
+          cp evidence/ORDER010_FINAL/activation.log "$LANE/activation.log"
+          cp evidence/ORDER010_FINAL/heartbeat.json "$LANE/heartbeat-final.json"
+          test "$RC" -eq 0
+          ! grep -E -q 'Reached heap limit|JavaScript heap out of memory' "$LANE/activation.log"
+          grep -q '"phase": "end"' "$LANE/activation.log"
+      - name: Upload lane B
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: order011-r1-lane-b-${{ github.run_id }}
+          path: evidence/ORDER011_R1_LANE_B/
+          retention-days: 7
+          if-no-files-found: error
+
+  qualify:
+    name: qualify
+    if: always()
+    needs: [lane-a, lane-b]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Download lane evidence
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          pattern: order011-r1-lane-*-${{ github.run_id }}
+          path: gathered
+      - name: Verify continuous coverage, OOM and economics
+        run: |
+          python scripts/r1_gate.py verify \
+            --root gathered \
+            --out evidence/ORDER011_R1_FINAL \
+            --head "${GITHUB_SHA}" \
+            --pin "$PINNED_UPSTREAM_SHA"
+      - name: Upload terminal R1 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: order011-r1-final-${{ github.run_id }}
+          path: evidence/ORDER011_R1_FINAL/
+          retention-days: 30
+          if-no-files-found: error

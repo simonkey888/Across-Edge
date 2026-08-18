@@ -1,0 +1,38 @@
+ORDER=009
+SOURCE_HEAD_SHA=3c770f755e199e3e6650a942c1fa8ccb51b7afc9
+GENERATED_AT=2026-08-15T02:32:52Z
+STATUS=BLOCKED_REAL
+
+SURFACE=LOCAL_CHATGPT_SANDBOX
+METHOD=git clone exact branch
+RESULT=BLOCKED
+ERROR_CLASS=DNS
+SANITIZED_ERROR=Could not resolve host: github.com
+
+SURFACE=GITHUB_ACTIONS
+METHOD=push-trigger exact-head ORDER-009 workflow
+RUN_ID=31859270326
+JOB_ID=94949586545
+RUNNER_ID=0
+STEPS_EXECUTED=0
+RESULT=BLOCKED_PRE_RUNNER
+SANITIZED_ERROR=The job was not started because recent account payments have failed or the spending limit needs to be increased.
+ZERO_COST_RECOVERY=UNAVAILABLE_WITHOUT_BILLING_CHANGE
+
+SURFACE=GITHUB_CODESPACES_VIA_CONNECTED_INTEGRATION
+METHOD=repository Codespaces API
+RESULT=HTTP_403
+SANITIZED_ERROR=Resource not accessible by integration
+
+SURFACE=CODEX_PROCESS_JOBS
+RESULT=UNAVAILABLE_ON_THIS_HOST
+DETAIL=controller/plugin runtime not mounted; no executable CPJ job surface exposed
+
+SURFACE=ASTRAL_ORCHESTRATOR
+RESULT=UNAVAILABLE_ON_THIS_HOST
+DETAIL=Codex Sol/Luna/Terra task lanes are not exposed in this ChatGPT host
+
+SURFACE=OTHER_ALREADY_AUTHORIZED_ZERO_COST_RUNTIME
+RESULT=NONE_AVAILABLE_TO_ARQ
+
+KNOWN_LIMITATIONS=Codespaces account entitlement cannot be adjudicated through this integration; no paid or owner-credential workaround was attempted

@@ -1,0 +1,4 @@
+SOURCE_HEAD=c9c446d20a786b4066ffa1f473259d484cbab696
+COMMAND=python -m compileall -q src scripts
+EXIT_CODE=0
+RESULT=PASS

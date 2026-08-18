@@ -1,0 +1,1 @@
+{"dns": "BLOCKED", "feed": "wss://arb1-feed.arbitrum.io/feed", "measurement": "EXPLICITLY_BLOCKED_BY_EXECUTION_SANDBOX_NETWORK", "reason": "gaierror: [Errno -3] Temporary failure in name resolution"}

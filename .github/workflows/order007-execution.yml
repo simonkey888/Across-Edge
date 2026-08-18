@@ -1,0 +1,128 @@
+name: order-007-execution
+
+on:
+  push:
+    branches: [order-001-shadow-relayer]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  final-verification:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout exact HEAD
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Record execution identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence/ORDER007_FINAL
+          {
+            echo "HEAD_SHA=$(git rev-parse HEAD)"
+            echo "BRANCH=${GITHUB_REF_NAME}"
+            echo "RUN_ID=${GITHUB_RUN_ID}"
+            echo "RUN_ATTEMPT=${GITHUB_RUN_ATTEMPT}"
+            echo "TIMESTAMP_UTC=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "OS=$(uname -s)"
+            echo "ARCH=$(uname -m)"
+            echo "PYTHON_VERSION=$(python3 --version 2>&1)"
+            echo "NODE_VERSION=$(node --version 2>&1)"
+          } > evidence/ORDER007_FINAL/execution_environment.txt
+
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          python3 -m pip install --upgrade pip
+          python3 -m pip install --no-deps -e . pytest
+
+      - name: Full test suite
+        run: python3 -m pytest -q --junitxml=evidence/ORDER007_FINAL/pytest.xml
+
+      - name: Compileall
+        run: python3 -m compileall -q src scripts
+
+      - name: Secret scan
+        run: python3 scripts/secret_scan.py > evidence/ORDER007_FINAL/secret_scan.txt
+
+      - name: Safety check
+        run: PYTHONPATH=src python3 -m across_edge.cli safety-check > evidence/ORDER007_FINAL/safety_check.txt
+
+      - name: Verify pinned upstream and patch
+        run: |
+          set -euo pipefail
+          PIN=$(python3 -c 'import json; print(json.load(open("config/upstream-pin.json"))["sha"])')
+          PATCH_SHA=$(python3 -c 'import json; print(json.load(open("config/upstream-pin.json"))["instrumentation_patch_sha256"])')
+          ACTUAL_PATCH_SHA=$(sha256sum patches/across-relayer-order003-instrumentation.patch | awk '{print $1}')
+          test "$PIN" = "741ca9f7d72923f7b13c1c2462ca90eba81e1a87"
+          test "$PATCH_SHA" = "$ACTUAL_PATCH_SHA"
+          git clone --filter=blob:none https://github.com/across-protocol/relayer.git upstream-relayer
+          git -C upstream-relayer fetch --depth 1 origin "$PIN"
+          git -C upstream-relayer checkout --detach "$PIN"
+          test "$(git -C upstream-relayer rev-parse HEAD)" = "$PIN"
+          git apply --check patches/across-relayer-order003-instrumentation.patch
+          git apply patches/across-relayer-order003-instrumentation.patch
+          echo "UPSTREAM_PIN=$PIN" > evidence/ORDER007_FINAL/upstream.txt
+          echo "PATCH_SHA256=$ACTUAL_PATCH_SHA" >> evidence/ORDER007_FINAL/upstream.txt
+          echo "PATCH_APPLY=PASS" >> evidence/ORDER007_FINAL/upstream.txt
+
+      - name: Upstream dependency install and tests
+        working-directory: upstream-relayer
+        run: |
+          set -euo pipefail
+          corepack enable
+          yarn install --immutable
+
+      - name: Read-only network smoke
+        run: |
+          set -u
+          python3 - <<'PY' > evidence/ORDER007_FINAL/network.txt
+          import json, ssl, time, urllib.request
+          for name,url in {'ARBITRUM_RPC':'https://arb1.arbitrum.io/rpc','BASE_RPC':'https://mainnet.base.org'}.items():
+              rec={'target':name}
+              try:
+                  body=json.dumps({'jsonrpc':'2.0','id':1,'method':'eth_chainId','params':[]}).encode()
+                  req=urllib.request.Request(url,data=body,headers={'Content-Type':'application/json'})
+                  t=time.monotonic()
+                  with urllib.request.urlopen(req,timeout=15,context=ssl.create_default_context()) as r:
+                      rec.update(http_status=r.status,latency_ms=round((time.monotonic()-t)*1000,3),result=json.loads(r.read()).get('result'))
+              except Exception as e:
+                  rec['error']=f'{type(e).__name__}: {e}'
+              print(json.dumps(rec,sort_keys=True))
+          PY
+
+      - name: Zero-write shadow smoke
+        run: |
+          set -u
+          mkdir -p evidence/ORDER007_FINAL/shadow
+          timeout 150s python3 scripts/shadow_run.py ./upstream-relayer --duration 120 --polling-delay 5 --observer-interval 2 --export-interval 30 --db evidence/ORDER007_FINAL/shadow.sqlite --run-id order007-shadow --out evidence/ORDER007_FINAL/shadow > evidence/ORDER007_FINAL/shadow/stdout.txt 2>&1
+
+      - name: Final manifest
+        if: always()
+        run: |
+          set -euo pipefail
+          {
+            echo "SOURCE_HEAD_SHA=$(git rev-parse HEAD)"
+            echo "RUN_ID=${GITHUB_RUN_ID}"
+            echo "RUN_ATTEMPT=${GITHUB_RUN_ATTEMPT}"
+            echo "GENERATED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "AUTHORIZED_SPEND_USD=0"
+            echo "PRIVATE_KEYS_USED=0"
+            echo "TRANSACTIONS_BROADCAST=0"
+            echo "ONCHAIN_VALUE_TRANSFER=0"
+            echo "LIVE_FINANCIAL_EXECUTION=0"
+          } > evidence/ORDER007_FINAL/final_manifest.txt
+
+      - name: Upload ORDER-007 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: order007-final-${{ github.run_id }}-${{ github.run_attempt }}
+          path: evidence/ORDER007_FINAL/
+          if-no-files-found: warn
+          retention-days: 7
